@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext'; // We'll use the updated login function from here
+import { useAuth } from '../context/AuthContext';
+import { GoogleLogin } from '@react-oauth/google';
 
 const LoginPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  // State to track if the user is a student or an organization
   const [userType, setUserType] = useState('student');
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -84,6 +84,30 @@ const LoginPage = () => {
             </button>
           </div>
         </form>
+
+        <div className="mt-6 flex flex-col items-center">
+          <div className="relative w-full flex items-center justify-center my-4">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-300"></div>
+            </div>
+            <span className="relative px-3 bg-white text-sm text-gray-500">Or continue with</span>
+          </div>
+
+          <div className="w-full flex justify-center">
+            <GoogleLogin
+              onSuccess={(credentialResponse) => {
+                loginWithGoogle(credentialResponse.credential, userType);
+              }}
+              onError={() => {
+                console.log('Google Login Failed');
+              }}
+              theme="outline"
+              size="large"
+              width="384"
+            />
+          </div>
+        </div>
+
         <p className="mt-6 text-center text-sm text-gray-600">
           Don't have an account?{' '}
           <Link to="/signup" className="font-medium text-indigo-600 hover:text-indigo-500">

@@ -17,63 +17,144 @@ export const AuthProvider = ({ children }) => {
 
   // Updated login function to call the real backend
   const login = async (email, password, userType) => { 
-    try {
-      let endpoint, role, idField;
-      
-      if (userType === 'student') {
-        endpoint = '/student/login';
-        role = 'student';
-        idField = 'user_id';
-      } else if (userType === 'admin') {
-        endpoint = '/admin/login';
-        role = 'admin';
-        idField = 'admin_id';
-      } else {
-        endpoint = '/organization/login';
-        role = 'company';
-        idField = 'organization_id';
-      }
-      
-      const body = new URLSearchParams();
-      body.append('email', email);
-      body.append('password', password);
+  try {
+    let endpoint, role, idField;
+    
+    if (userType === 'student') {
+      endpoint = '/student/login';
+      role = 'student';
+      idField = 'user_id';
+    } else if (userType === 'admin') {
+      endpoint = '/admin/login';
+      role = 'admin';
+      idField = 'admin_id';
+    } else {
+      endpoint = '/organization/login';
+      role = 'company';
+      idField = 'organization_id';
+    }
+    
+    const body = new URLSearchParams();
+    body.append('email', email);
+    body.append('password', password);
 
-      const response = await fetch(`http://127.0.0.1:8000${endpoint}`, {
+    const response = await fetch(`http://127.0.0.1:8000${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body,
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.detail || 'Login failed');
+    }
+
+    const id = data[idField];
+    const name = data.name || '';
+
+    // 🔥 NEW: Get mobile from backend
+    const mobile = data.mobile || "";
+
+    const userData = { 
+      token: 'real-token', 
+      role: role, 
+      id: id, 
+      email: email, 
+      name: name 
+    };
+
+    // 🔥 STORE DATA
+    localStorage.setItem('user', JSON.stringify(userData));
+    localStorage.setItem('mobile', mobile);   // ✅ IMPORTANT
+
+    setUser(userData);
+
+    // Redirect based on role
+    switch (role) {
+      case 'student': {
+        navigate("/student/dashboard");
+        break;
+      }
+      case 'company':
+        navigate("/company/dashboard");
+        break;
+      case 'admin':
+        navigate("/admin/dashboard");
+        break;
+      default:
+        navigate("/");
+        break;
+    }
+
+  } catch (error) {
+    console.error("Login failed:", error);
+    alert(error.message); 
+  }
+};
+
+  const loginWithGoogle = async (credential, userType) => {
+    try {
+      const response = await fetch(`http://127.0.0.1:8000/auth/google`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: body,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential, userType }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.detail || 'Login failed');
+        throw new Error(data.detail || 'Google Login failed');
+      }
+
+      let role, idField;
+      if (userType === 'student') {
+        role = 'student';
+        idField = 'user_id';
+      } else if (userType === 'admin') {
+        role = 'admin';
+        idField = 'admin_id';
+      } else {
+        role = 'company';
+        idField = 'organization_id';
       }
 
       const id = data[idField];
       const name = data.name || '';
-      
-      const userData = { token: 'real-token', role: role, id: id, email: email, name: name };
+      const mobile = data.mobile || "";
+      const email = data.email || "";
+
+      const userData = { 
+        token: 'real-token', 
+        role: role, 
+        id: id, 
+        email: email, 
+        name: name 
+      };
+
       localStorage.setItem('user', JSON.stringify(userData));
+      localStorage.setItem('mobile', mobile);
+
       setUser(userData);
 
-      // Redirect based on role
       switch (role) {
         case 'student':
-          navigate('/student/dashboard');
+          navigate("/student/dashboard");
           break;
         case 'company':
-          navigate('/company/dashboard');
+          navigate("/company/dashboard");
           break;
         case 'admin':
-          navigate('/admin/dashboard');
+          navigate("/admin/dashboard");
           break;
         default:
-          navigate('/login');
+          navigate("/");
+          break;
       }
+
     } catch (error) {
-      console.error("Login failed:", error);
-      alert(error.message); 
+      console.error("Google login failed:", error);
+      alert(error.message);
     }
   };
 
@@ -84,7 +165,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider value={{ user, login, loginWithGoogle, logout }}>
       {children}
     </AuthContext.Provider>
   );

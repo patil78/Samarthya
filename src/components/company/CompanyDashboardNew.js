@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import axios from 'axios';
 import JobPostingFormNew from './JobPostingFormNew';
@@ -11,7 +11,6 @@ const CompanyDashboardNew = () => {
   const { user, logout } = useAuth();
   const [view, setView] = useState('dashboard'); // dashboard, postJob, viewStudents
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
   const [allocatedStudentsError, setAllocatedStudentsError] = useState('');
   const [orgId, setOrgId] = useState(null);
   const [postedJobs, setPostedJobs] = useState([]);
@@ -21,6 +20,53 @@ const CompanyDashboardNew = () => {
     totalAllocated: 0,
     totalWaiting: 0
   });
+
+  // Load posted job opportunities
+  const loadPostedJobs = useCallback(async () => {
+    try {
+      setLoading(true);
+      console.log('Loading posted jobs for orgId:', orgId);
+      const response = await axios.get(`${API_BASE_URL}/organization/${orgId}/sectors`);
+      console.log('Posted jobs response:', response.data);
+      setPostedJobs(response.data.sectors || []);
+      setStatistics(prev => ({ ...prev, totalPosted: response.data.sectors?.length || 0 }));
+    } catch (err) {
+      console.error('Error loading posted jobs:', err);
+      console.error('Error details:', err.response);
+    } finally {
+      setLoading(false);
+    }
+  }, [orgId]);
+
+  // Load allocated students
+  const loadAllocatedStudents = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/dashboard/company`, {
+        params: { email: user.email }
+      });
+      
+      let students = [];
+      if (response.data.data) {
+        students = response.data.data;
+      } else if (Array.isArray(response.data)) {
+        students = response.data;
+      }
+      setAllocatedStudents(students);
+
+      const allocated = students.filter(s => s.status === 'Allocated').length;
+      const waiting = students.filter(s => s.status === 'Waiting').length;
+      setStatistics(prev => ({ 
+        ...prev, 
+        totalAllocated: allocated,
+        totalWaiting: waiting
+      }));
+    } catch (err) {
+      console.error('Error loading allocated students:', err);
+      if (err.response?.status !== 404) {
+        setAllocatedStudentsError('Failed to load allocated students');
+      }
+    }
+  }, [user]);
 
   // Extract organization_id from user object
   useEffect(() => {
@@ -44,59 +90,7 @@ const CompanyDashboardNew = () => {
       loadPostedJobs();
       loadAllocatedStudents();
     }
-  }, [orgId]);
-
-  // Load posted job opportunities
-  const loadPostedJobs = async () => {
-    try {
-      setLoading(true);
-      console.log('Loading posted jobs for orgId:', orgId);
-      const response = await axios.get(`${API_BASE_URL}/organization/${orgId}/sectors`);
-      console.log('Posted jobs response:', response.data);
-      setPostedJobs(response.data.sectors || []);
-      setStatistics(prev => ({ ...prev, totalPosted: response.data.sectors?.length || 0 }));
-    } catch (err) {
-      console.error('Error loading posted jobs:', err);
-      console.error('Error details:', err.response);
-      // Don't show error if just empty, only on actual error
-      if (err.response && err.response.status !== 404) {
-        setError('Failed to load posted jobs');
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Load allocated students
-  const loadAllocatedStudents = async () => {
-    try {
-      const response = await axios.get(`${API_BASE_URL}/api/dashboard/company`, {
-        params: { email: user.email }
-      });
-      
-      if (response.data.data) {
-        setAllocatedStudents(response.data.data);
-      } else if (Array.isArray(response.data)) {
-        setAllocatedStudents(response.data);
-      } else {
-        setAllocatedStudents([]);
-      }
-
-      // Calculate statistics
-      const allocated = allocatedStudents.filter(s => s.status === 'Allocated').length;
-      const waiting = allocatedStudents.filter(s => s.status === 'Waiting').length;
-      setStatistics(prev => ({ 
-        ...prev, 
-        totalAllocated: allocated,
-        totalWaiting: waiting
-      }));
-    } catch (err) {
-      console.error('Error loading allocated students:', err);
-      if (err.response?.status !== 404) {
-        setAllocatedStudentsError('Failed to load allocated students');
-      }
-    }
-  };
+  }, [orgId, loadPostedJobs, loadAllocatedStudents]);
 
   // Handle job posting success
   const handleJobPosted = () => {

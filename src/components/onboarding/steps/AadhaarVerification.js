@@ -77,6 +77,20 @@ const AadhaarVerification = ({ data, handleChange, nextStep }) => {
     }
   };
 
+ const handleNextClick = () => {
+  // Check if Aadhaar is verified
+  if (!(status.includes("✅") && status.includes("ELIGIBLE"))) {
+    alert("Please complete Aadhaar verification first");
+    return;
+  }
+
+  // ✅ STEP UPDATE (VERY IMPORTANT)
+  localStorage.setItem("onboardingStep", "personal");
+
+  // ✅ MOVE NEXT
+  nextStep();
+}; 
+
   return (
     <div>
       <h2 className="text-2xl font-bold mb-4">Aadhaar Verification</h2>
@@ -129,7 +143,7 @@ const AadhaarVerification = ({ data, handleChange, nextStep }) => {
           Verify OTP
         </button>
         <button
-          onClick={nextStep}
+          onClick={handleNextClick}
           // ✅ CORRECTED LOGIC: This now checks for both the success symbol AND the word "ELIGIBLE".
           disabled={!(status.includes("✅") && status.includes("ELIGIBLE"))}
           className="ml-auto px-6 py-2 bg-indigo-600 text-white font-semibold rounded-md shadow-sm hover:bg-indigo-700 disabled:bg-gray-400"

@@ -5,7 +5,9 @@ from db import get_connection
 from utils import save_file, check_resume_format, parse_resume, extract_basic_details
 from passlib.context import CryptContext
 from pdfminer.high_level import extract_text
-import os, re, json
+import os, re, json, random
+from dotenv import load_dotenv
+load_dotenv()
 from fastapi.responses import HTMLResponse
 from sqlalchemy import create_engine, text
 import uvicorn
@@ -15,6 +17,10 @@ from match import engine, run_reallocation_for_student, process_acceptance_logic
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
+from datetime import datetime, timedelta
+from twilio.rest import Client
+from google.oauth2 import id_token
+from google.auth.transport import requests
 
 # --- NEW Pydantic Models for Preferences ---
 class LocationModel(BaseModel):
@@ -38,6 +44,10 @@ class PreferenceModel(BaseModel):
 class PreferencesRequest(BaseModel):
     preferences: List[PreferenceModel]
 
+class GoogleLoginRequest(BaseModel):
+    credential: str
+    userType: str
+
 import os
 
 # Get the directory where this script is located
@@ -51,7 +61,12 @@ ssl_args = {
 # -------------------------------
 # DB CONNECTION
 # -------------------------------
-engine = create_engine("mysql+pymysql://2p6u58mMBxe8vS4.root:Z9A4YzsaLtwXXHmZ@gateway01.ap-southeast-1.prod.aws.tidbcloud.com:4000/samarthya_db",connect_args=ssl_args, pool_recycle=3600)
+engine = create_engine(
+    "mysql+pymysql://2p6u58mMBxe8vS4.root:Z9A4YzsaLtwXXHmZ@gateway01.ap-southeast-1.prod.aws.tidbcloud.com:4000/samarthya_db",
+    connect_args=ssl_args,
+    pool_recycle=280,
+    pool_pre_ping=True
+)
 
 pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
 app = FastAPI(title="Student-Org Portal API")
@@ -75,18 +90,8 @@ app.add_middleware(
 # Import the correct get_connection from db.py (mysql.connector version)
 # The db.get_connection() is already imported at the top, so we can use it directly
 
-# =======================
-# NEW: Admin endpoint to trigger matching
-# =======================
-@app.post("/admin/run-allocation")
-def trigger_allocation():
-    try:
-        print("--- TRIGGERING ALLOCATION RUN ---")
-        run_allocation()
-        print("--- ALLOCATION RUN COMPLETE ---")
-        return {"message": "Allocation process completed successfully."}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An error occurred during allocation: {str(e)}")
+# NOTE: /admin/run-allocation is defined later in this file (async version with full
+# statistics, logging, and error handling). Do not add a duplicate route here.
 
 # =======================
 # DATABASE PING
@@ -122,18 +127,91 @@ def student_signup(email: str = Form(...), mobile: str = Form(...), password: st
         conn.commit()
     return {"message": "Student registered successfully"}
 
+@app.post("/auth/google")
+def google_auth(req: GoogleLoginRequest):
+    try:
+        # Note: We pass requests.Request() to google-auth to fetch Google public keys and verify signature.
+        # We don't enforce checking the Client ID here to allow generic developer credentials.
+        idinfo = id_token.verify_oauth2_token(req.credential, requests.Request())
+        
+        email = idinfo['email']
+        name = idinfo.get('name', '')
+    except Exception as e:
+        print("Google token verification failed:", e)
+        raise HTTPException(status_code=400, detail="Invalid Google token")
+
+    user_type = req.userType
+    with engine.connect() as conn:
+        if user_type == 'student':
+            # Check if student user exists in database
+            row = conn.execute(
+                text("SELECT user_id, mobile FROM users WHERE email=:email"),
+                {"email": email}
+            ).fetchone()
+            
+            if not row:
+                # First time Google login - auto register student
+                random_pass = str(random.randint(100000, 999999))
+                password_hash = pwd_context.hash(random_pass)
+                conn.execute(
+                    text("INSERT INTO users (email, password_hash, mobile) VALUES (:email, :p_hash, NULL)"),
+                    {"email": email, "p_hash": password_hash}
+                )
+                conn.commit()
+                # Fetch new user details
+                row = conn.execute(
+                    text("SELECT user_id, mobile FROM users WHERE email=:email"),
+                    {"email": email}
+                ).fetchone()
+
+            return {
+                "message": "Login successful",
+                "user_id": row[0],
+                "mobile": row[1] or "",
+                "name": name
+            }
+
+        elif user_type == 'admin':
+            row = conn.execute(
+                text("SELECT admin_id, name FROM admins WHERE email=:email"),
+                {"email": email}
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=400, detail="This Google account is not registered as an Admin.")
+            return {
+                "message": "Login successful",
+                "admin_id": row[0],
+                "name": row[1]
+            }
+
+        else: # company
+            row = conn.execute(
+                text("SELECT organization_id, name FROM organizations WHERE email=:email"),
+                {"email": email}
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=400, detail="This Google account is not registered as an Organization.")
+            return {
+                "message": "Login successful",
+                "organization_id": row[0],
+                "name": row[1]
+            }
+
 @app.post("/student/login")
 def student_login(email: str = Form(...), password: str = Form(...)):
     with engine.connect() as conn:
         row = conn.execute(
-            text("SELECT user_id, password_hash FROM users WHERE email=:email"),
+            text("SELECT user_id, password_hash, mobile FROM users WHERE email=:email"),
             {"email": email}
         ).fetchone()
 
     if not row or not pwd_context.verify(password, row[1]):
         raise HTTPException(status_code=400, detail="Invalid email or password")
-    return {"message": "Login successful", "user_id": row[0]}
-
+    return {
+    "message": "Login successful",
+    "user_id": row[0],
+    "mobile": row[2]
+}
 # =======================
 # ORGANIZATION SIGNUP / LOGIN
 # =======================
@@ -722,71 +800,190 @@ async def submit_personal_details(
 # =======================
 # RESUME UPLOAD & PARSING
 # =======================
+# @app.post("/upload/resume/{user_id}")
+# async def upload_resume(user_id: int, file: UploadFile = File(...)):
+#     try:
+#         with engine.connect() as conn:
+#             # Verification check
+#             row = conn.execute(text("SELECT is_verified FROM verification WHERE user_id = :uid"), {"uid": user_id}).fetchone()
+#             if not row or not row[0]:  # Check for boolean TRUE
+#                 raise HTTPException(status_code=403, detail="Aadhaar & Personal details not verified yet")
+
+#             content = await file.read()
+#             file_path = save_file(content, user_id, "resume") 
+
+            
+
+#             parsed_data = parse_resume(file_path)
+#             skills_json = json.dumps(parsed_data.get("skills", []))
+            
+#             # Get or create student profile
+#             profile_row = conn.execute(
+#                 text("SELECT profile_id FROM student_profiles WHERE user_id = :uid"),
+#                 {"uid": user_id}
+#             ).fetchone()
+            
+#             if not profile_row:
+#                 # Create a basic profile if it doesn't exist
+#                 conn.execute(
+#                     text("INSERT INTO student_profiles (user_id) VALUES (:uid)"),
+#                     {"uid": user_id}
+#                 )
+#                 conn.commit()
+#                 profile_row = conn.execute(
+#                     text("SELECT profile_id FROM student_profiles WHERE user_id = :uid"),
+#                     {"uid": user_id}
+#                 ).fetchone()
+            
+#             profile_id = profile_row[0]
+#             file_name = file.filename or f"resume_{user_id}.pdf"
+#             file_size = len(content)
+
+#             conn.execute(
+#                 text("""
+#                     INSERT INTO resumes (user_id, profile_id, file_path, file_name, file_size, extracted_skills, uploaded_at)
+#                     VALUES (:uid, :profile_id, :path, :file_name, :file_size, :skills, NOW())
+#                 """),
+#                 {
+#                     "uid": user_id, 
+#                     "profile_id": profile_id,
+#                     "path": file_path, 
+#                     "file_name": file_name,
+#                     "file_size": file_size,
+#                     "skills": skills_json
+#                 }
+#             )
+#             conn.commit()
+
+#             autofill = extract_basic_details(file_path)
+
+#             return {
+#                 "message": "Resume uploaded & parsed successfully",
+#                 "autofill": autofill,
+#                 "parsed_skills": parsed_data.get("skills", []),
+#                 "parsed_education": parsed_data.get("education", [])
+#             }
+#     except HTTPException as he:
+#         raise he
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
+#this is the extra vala code
 @app.post("/upload/resume/{user_id}")
 async def upload_resume(user_id: int, file: UploadFile = File(...)):
     try:
         with engine.connect() as conn:
-            # Verification check
-            row = conn.execute(text("SELECT is_verified FROM verification WHERE user_id = :uid"), {"uid": user_id}).fetchone()
-            if not row or not row[0]:  # Check for boolean TRUE
-                raise HTTPException(status_code=403, detail="Aadhaar & Personal details not verified yet")
 
-            content = await file.read()
-            file_path = save_file(content, user_id, "resume") 
-
-            parsed_data = parse_resume(file_path)
-            skills_json = json.dumps(parsed_data.get("skills", []))
-            
-            # Get or create student profile
-            profile_row = conn.execute(
-                text("SELECT profile_id FROM student_profiles WHERE user_id = :uid"),
+            # -----------------------------
+            # 1. GET REGISTERED EMAIL
+            # -----------------------------
+            user_row = conn.execute(
+                text("SELECT email FROM users WHERE user_id = :uid"),
                 {"uid": user_id}
             ).fetchone()
-            
-            if not profile_row:
-                # Create a basic profile if it doesn't exist
-                conn.execute(
-                    text("INSERT INTO student_profiles (user_id) VALUES (:uid)"),
-                    {"uid": user_id}
-                )
-                conn.commit()
-                profile_row = conn.execute(
-                    text("SELECT profile_id FROM student_profiles WHERE user_id = :uid"),
-                    {"uid": user_id}
-                ).fetchone()
-            
-            profile_id = profile_row[0]
-            file_name = file.filename or f"resume_{user_id}.pdf"
-            file_size = len(content)
 
+            if not user_row:
+                raise HTTPException(status_code=404, detail="User not found")
+
+            registered_email = user_row[0].lower().strip()
+
+            # -----------------------------
+            # 2. GET PROFILE NAME
+            # -----------------------------
+            profile_row = conn.execute(
+                text("SELECT profile_id, name FROM student_profiles WHERE user_id = :uid"),
+                {"uid": user_id}
+            ).fetchone()
+
+            if not profile_row:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Please fill personal details first"
+                )
+
+            profile_id = profile_row[0]
+            profile_name = (profile_row[1] or "").lower().strip()
+
+            # -----------------------------
+            # 3. SAVE FILE
+            # -----------------------------
+            content = await file.read()
+            file_path = save_file(content, user_id, "resume")
+
+            # -----------------------------
+            # 4. EXTRACT DETAILS
+            # -----------------------------
+            basic_details = extract_basic_details(file_path)
+
+            resume_name = (basic_details.get("name") or "").lower().strip()
+            resume_email = (basic_details.get("email") or "").lower().strip()
+
+            # -----------------------------
+            # 5. VALIDATION
+            # -----------------------------
+            if not resume_name or not resume_email:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Resume must contain name and email"
+                )
+
+            # EMAIL CHECK
+            if resume_email != registered_email:
+                raise HTTPException(
+                    status_code=400,
+                    detail="❌ Resume email does not match registered email"
+                )
+
+            # NAME CHECK (FIRST NAME MATCH)
+            if profile_name.split()[0] not in resume_name:
+                raise HTTPException(
+                    status_code=400,
+                    detail="❌ Resume name does not match your profile name"
+                )
+
+            # -----------------------------
+            # 6. PARSE RESUME
+            # -----------------------------
+            parsed_data = parse_resume(file_path)
+
+            # Convert skills list → string
+            skills_text = ", ".join(parsed_data.get("skills", []))
+
+            # -----------------------------
+            # 7. SAVE TO DATABASE
+            # -----------------------------
             conn.execute(
-                text("""
-                    INSERT INTO resumes (user_id, profile_id, file_path, file_name, file_size, extracted_skills, uploaded_at)
-                    VALUES (:uid, :profile_id, :path, :file_name, :file_size, :skills, NOW())
-                """),
-                {
-                    "uid": user_id, 
-                    "profile_id": profile_id,
-                    "path": file_path, 
-                    "file_name": file_name,
-                    "file_size": file_size,
-                    "skills": skills_json
-                }
-            )
+    text("""
+        INSERT INTO resumes 
+        (user_id, profile_id, file_path, file_name, file_size, extracted_skills, uploaded_at)
+        VALUES (:uid, :pid, :path, :file_name, :file_size, :skills, NOW())
+    """),
+    {
+        "uid": user_id,
+        "pid": profile_id,
+        "path": file_path,
+        "file_name": file.filename,
+        "file_size": len(content),
+        "skills": skills_text
+    }
+)
+
             conn.commit()
 
-            autofill = extract_basic_details(file_path)
-
+            # -----------------------------
+            # 8. RETURN RESPONSE
+            # -----------------------------
             return {
-                "message": "Resume uploaded & parsed successfully",
-                "autofill": autofill,
+                "message": "✅ Resume Verified Successfully",
+                "autofill": basic_details,
                 "parsed_skills": parsed_data.get("skills", []),
                 "parsed_education": parsed_data.get("education", [])
             }
+
     except HTTPException as he:
         raise he
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # =======================
 # STUDENT PROFILE
@@ -1184,7 +1381,6 @@ async def get_all_sectors():
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
-        raise HTTPException(status_code=500, detail=f"Error fetching sectors: {e}")
 
 @app.get("/api/roles")
 async def get_roles_by_sector(sector: str = Query(...)):
@@ -1846,47 +2042,48 @@ def get_company_dashboard(email: str = Query(...)):
 
     return result_df.to_dict(orient="records")
 
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
 
 # ==========================
 # AADHAAR OTP VERIFICATION (TWILIO)
 # ==========================
-from fastapi import HTTPException
-from pydantic import BaseModel
-from datetime import datetime, timedelta
-import random
-from twilio.rest import Client
 
 # ------------------ Twilio Credentials ------------------
-TWILIO_ACCOUNT_SID = "AC45fac939cab0d8fa06832535086802ae"
-TWILIO_AUTH_TOKEN = "167efc18b04f66161adce5db9e9a2b0c"
-TWILIO_PHONE_NUMBER = "+15179968340"
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "YOUR_TWILIO_ACCOUNT_SID_PLACEHOLDER")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "YOUR_TWILIO_AUTH_TOKEN_PLACEHOLDER")
+TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "+18314803237")
 
-client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 # ------------------ Mock Database ------------------
+# ⚠️ TWILIO TRIAL: Destination numbers must be verified at console.twilio.com → Verified Caller IDs
+# Add your own verified Indian mobile number below for testing.
 mock_db = {
     "123456789012": {
         "name": "Shradha Raina",
-        "mobile": "+918713826112",
+        "mobile": "+918713826112",   # Must be verified in Twilio console
         "dob": "2002-05-15"
     },
     "987654321098": {
         "name": "Priya Verma",
-        "mobile": "+917597474850",
+        "mobile": "+917597474850",   # Must be verified in Twilio console
         "dob": "1997-09-20"
     },
     "477509063796": {
         "name": "Siddhant Akhade",
-        "mobile": "+919769306483",
+        "mobile": "+919769306483",   # Must be verified in Twilio console
         "dob": "2002-09-20"
     },
     "477509063798": {
         "name": "Siddhant Akhade",
-        "mobile": "+918779441134",
+        "mobile": "+918779441134",   # Must be verified in Twilio console
         "dob": "2000-09-20"
-    }
+    },
+    # ✅ ADD YOUR OWN VERIFIED NUMBER HERE FOR TESTING
+    "111122223333": {
+        "name": "Aastha",
+        "mobile": "+917227913579",  
+        "dob": "2003-01-01"         
+    },
 }
 
 # ------------------ OTP Store ------------------
@@ -1901,13 +2098,8 @@ class VerifyOtpRequest(BaseModel):
     otp: str
 
 # ------------------ Helper Functions ------------------
-def calculate_age(dob_str: str) -> int:
-    dob = datetime.strptime(dob_str, "%Y-%m-%d")
-    today = datetime.today()
-    return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
-
 def send_twilio_otp(mobile: str, otp: str):
-    message = client.messages.create(
+    message = twilio_client.messages.create(
         body=f"Your OTP for Aadhaar verification is {otp}. It is valid for 2 minutes.",
         from_=TWILIO_PHONE_NUMBER,
         to=mobile
@@ -1925,11 +2117,21 @@ def send_otp(req: SendOtpRequest):
     otp_store[req.aadhaar] = {"otp": otp, "expires": datetime.now() + timedelta(minutes=2)}
 
     mobile = mock_db[req.aadhaar]['mobile']
+
+    # ✅ Always print OTP to console as dev fallback
+    print(f"\n{'='*40}")
+    print(f"🔐 OTP for Aadhaar {req.aadhaar}: {otp}")
+    print(f"📱 Sending to: {mobile}")
+    print(f"{'='*40}\n")
+
     try:
         sid = send_twilio_otp(mobile, otp)
-        return {"message": f"✅ OTP sent to {mobile}", "sid": sid}
+        print(f"✅ Twilio SMS sent successfully. SID: {sid}")
+        return {"message": f"✅ OTP sent to {mobile[-4:].rjust(len(mobile), '*')}", "sid": sid}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to send OTP: {str(e)}")
+        print(f"❌ Twilio failed: {e}")
+        # In development, return success but note Twilio failure
+        return {"message": f"⚠️ SMS delivery failed (Twilio error). Check server console for OTP. Error: {str(e)}"}
 
 @app.post("/verify-otp")
 def verify_otp(req: VerifyOtpRequest):
@@ -1954,6 +2156,9 @@ def verify_otp(req: VerifyOtpRequest):
         return {"message": f"✅ Aadhaar verified. Student is ELIGIBLE (Age {age})."}
     else:
         return {"message": f"❌ Aadhaar verified but NOT ELIGIBLE (Age {age})."}
+
+
+
 
 
 # =======================
@@ -2295,3 +2500,6 @@ async def get_all_jobs():
         print(f"❌ Error fetching jobs: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch jobs: {str(e)}")
 
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)

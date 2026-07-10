@@ -9,4 +9,5 @@ transformers
 torch
 scikit-learn
 pandas
+twilio
 

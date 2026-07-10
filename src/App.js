@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 
 // Import Context and Components
 import { AuthProvider } from './context/AuthContext';
@@ -16,53 +17,58 @@ import CompanyDashboard from './components/company/CompanyDashboardNew';
 import AdminDashboard from './components/AdminDashboard';
 import StudentArea from './pages/StudentArea'; // 👈 1. IMPORT THE NEW CONTROLLER COMPONENT
 
+// TODO: Replace with your actual Google Client ID from Google Cloud Console
+const GOOGLE_CLIENT_ID = "109865123984-placeholder.apps.googleusercontent.com";
+
 function App() {
   return (
-    <BrowserRouter>
-      {/* The AuthProvider makes user data available to all components */}
-      <AuthProvider>
-        <Routes>
-          {/* --- Public Routes --- */}
-          {/* These routes are accessible to everyone */}
-          <Route path="/" element={<AuthPage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/signup" element={<SignupPage />} />
+    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+      <BrowserRouter>
+        {/* The AuthProvider makes user data available to all components */}
+        <AuthProvider>
+          <Routes>
+            {/* --- Public Routes --- */}
+            {/* These routes are accessible to everyone */}
+            <Route path="/" element={<AuthPage />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/signup" element={<SignupPage />} />
 
-          {/* --- Protected Routes --- */}
-          {/* To access these routes, the user must meet the role requirements */}
-          
-          {/* Student Dashboard Route */}
-          <Route
-            path="/student/dashboard"
-            element={
-              <ProtectedRoute allowedRoles={['student']}>
-                <StudentArea /> {/* 👈 2. USE StudentArea HERE */}
-              </ProtectedRoute>
-            }
-          />
+            {/* --- Protected Routes --- */}
+            {/* To access these routes, the user must meet the role requirements */}
+            
+            {/* Student Dashboard Route */}
+            <Route
+              path="/student/dashboard"
+              element={
+                <ProtectedRoute allowedRoles={['student']}>
+                  <StudentArea /> {/* 👈 2. USE StudentArea HERE */}
+                </ProtectedRoute>
+              }
+            />
 
-          {/* Company Dashboard Route */}
-          <Route
-            path="/company/dashboard"
-            element={
-              <ProtectedRoute allowedRoles={['company']}>
-                <CompanyDashboard />
-              </ProtectedRoute>
-            }
-          />
-          
-          {/* Admin Dashboard Route */}
-          <Route
-            path="/admin/dashboard"
-            element={
-              <ProtectedRoute allowedRoles={['admin']}>
-                <AdminDashboard />
-              </ProtectedRoute>
-            }
-          />
-        </Routes>
-      </AuthProvider>
-    </BrowserRouter>
+            {/* Company Dashboard Route */}
+            <Route
+              path="/company/dashboard"
+              element={
+                <ProtectedRoute allowedRoles={['company']}>
+                  <CompanyDashboard />
+                </ProtectedRoute>
+              }
+            />
+            
+            {/* Admin Dashboard Route */}
+            <Route
+              path="/admin/dashboard"
+              element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <AdminDashboard />
+                </ProtectedRoute>
+              }
+            />
+          </Routes>
+        </AuthProvider>
+      </BrowserRouter>
+    </GoogleOAuthProvider>
   );
 }
 

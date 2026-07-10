@@ -27,7 +27,12 @@ ssl_args = {
 
 
 # --- DB CONNECTION & AI MODEL ---
-engine = create_engine("mysql+pymysql://2p6u58mMBxe8vS4.root:Z9A4YzsaLtwXXHmZ@gateway01.ap-southeast-1.prod.aws.tidbcloud.com:4000/samarthya_db", connect_args=ssl_args, pool_recycle=3600)
+engine = create_engine(
+    "mysql+pymysql://2p6u58mMBxe8vS4.root:Z9A4YzsaLtwXXHmZ@gateway01.ap-southeast-1.prod.aws.tidbcloud.com:4000/samarthya_db",
+    connect_args=ssl_args,
+    pool_recycle=280,
+    pool_pre_ping=True
+)
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
 # --- EMAIL FUNCTION (Updated to handle waiting number) ---
@@ -35,8 +40,8 @@ def send_email(receiver, student_name, role_name, company_name, score, profile_i
     sender = SENDER_EMAIL
     password = EMAIL_PASSWORD
 
-    accept_link = f"http://localhost:8000/api/respond?profile_id={profile_id}&opportunity_id={opportunity_id}&response=Accepted"
-    reject_link = f"http://localhost:8000/api/respond?profile_id={profile_id}&opportunity_id={opportunity_id}&response=Rejected"
+    accept_link = f"https://purple-dancers-cut.loca.lt/api/respond?profile_id={profile_id}&opportunity_id={opportunity_id}&response=Accepted"
+    reject_link = f"https://purple-dancers-cut.loca.lt/api/respond?profile_id={profile_id}&opportunity_id={opportunity_id}&response=Rejected"
 
     subject = f"Internship Allocation - {company_name}"
     
@@ -189,21 +194,9 @@ def run_allocation():
         student_name = student_info["student_name"]
         student_email = student_info["email"]
         
-        offers_count = 0
-        waiting_count = 0
-        
         # Iterate through student's ranked preferences
         for _, row in student_group.sort_values(by="preference_rank").iterrows():
-            if offers_count >= MAX_OFFERS and waiting_count >= MAX_WAITING:
-                print(f"🛑 Student {student_name} ({profile_id}) reached max allocations/waitlists. Stopping.")
-                break
-
             opportunity_id = row["opportunity_id"]
-            
-            # --- FILTERING STAGE: Sector -> Role -> Location (Preference Match) ---
-            # NOTE: Since the data is pulled via student_preferences (which already links student to opportunity),
-            # we assume the act of choosing the opportunity means the student wants that S/R/L combination.
-            # The previous code's logic of scoring preference based on index (1.0, 0.8...) is now applied implicitly by the *preference_rank* order.
             
             # --- SCORING STAGE: Skills ---
             skill_match_score = skill_score(row["student_skills_json"], row["required_skills"]) * 100
@@ -215,24 +208,7 @@ def run_allocation():
             # --- QUALIFICATION CHECK ---
             qual_pass = qualification_matches(row["student_qualification"], row["education_required"])
 
-            # Debug logging
-            if not score_pass or not qual_pass:
-                print(f"   ⚠️ {student_name} filtered out for {row['opportunity_role']}: skill={skill_match_score:.1f} (min={min_score}, pass={score_pass}), qual_pass={qual_pass}")
-            
-            final_status = "Skipped"
-
-            if score_pass and qual_pass:
-                # Student is Qualified. Now check current allocation status for this opportunity.
-                
-                # Check how many seats are left (simulated by checking existing allocations)
-                # Since we are running the whole allocation *before* saving, we must query the DB for current seat status
-                # or build a temporary running tally. For simplicity and robustness on first run, we'll assign and then trim.
-                
-                # The student is a potential candidate. We record the score and move to the ranking phase.
-                final_status = "Qualified"
-
-            # Record the result for later ranking within the opportunity
-            allocation_status_rows.append({
+            row_data = {
                 "profile_id": profile_id,
                 "student_name": student_name,
                 "email": student_email,
@@ -244,16 +220,23 @@ def run_allocation():
                 "min_score": min_score,
                 "student_qualification": row["student_qualification"],
                 "education_required": row["education_required"],
-                "status": final_status, # Temporarily 'Qualified' or 'Skipped'
                 "score": skill_match_score,
                 "preference_rank": row["preference_rank"]
-            })
+            }
+
+            if score_pass and qual_pass:
+                row_data["status"] = "Qualified"
+                allocation_status_rows.append(row_data)
+            else:
+                row_data["status"] = "Skipped"
+                allocation_status_rows.append(row_data)
+                print(f"   ⚠️ {student_name} filtered out for {row['opportunity_role']}: skill={skill_match_score:.1f} (min={min_score}, pass={score_pass}), qual_pass={qual_pass}")
             
     if not allocation_status_rows:
         print("❌ No matches found after initial filtering.")
         return
 
-    # --- RANKING AND FINAL ASSIGNMENT STAGE ---
+    # --- RANKING AND FINAL ASSIGNMENT STAGE (GALE-SHAPLEY STABLE MATCHING) ---
     
     allocation_df = pd.DataFrame(allocation_status_rows)
     final_allocation_rows = []
@@ -262,7 +245,7 @@ def run_allocation():
     # Get only Qualified candidates
     qualified_df = allocation_df[allocation_df["status"] == "Qualified"].copy()
     
-    print(f"\n📊 Allocation Summary:")
+    print(f"\n📊 Allocation Summary (Gale-Shapley):")
     print(f"   Total processed: {len(allocation_df)}")
     print(f"   Qualified: {len(qualified_df)}")
     print(f"   Skipped: {len(allocation_df[allocation_df['status'] == 'Skipped'])}")
@@ -271,75 +254,141 @@ def run_allocation():
         print("⚠️ No qualified candidates found. Check min_score requirements and student qualifications.")
         return
     
-    # Update student tracker for final limits
-    student_offers = {}
-    student_waitlists = {}
-
-    # Group by Opportunity to rank and allocate seats
-    for opportunity_id, group in qualified_df.groupby("opportunity_id"):
+    # 1. Structure the student preferences for Gale-Shapley
+    student_eligible_prefs = {}
+    for _, row in qualified_df.iterrows():
+        pid = row["profile_id"]
+        if pid not in student_eligible_prefs:
+            student_eligible_prefs[pid] = []
+        student_eligible_prefs[pid].append(row.to_dict())
         
+    # Sort each student's preferences by preference_rank ascending
+    for pid in student_eligible_prefs:
+        student_eligible_prefs[pid].sort(key=lambda x: x["preference_rank"])
+        
+    # 2. Run Gale-Shapley stable matching algorithm
+    # student_matches: profile_id -> list of matched opportunity dicts
+    student_matches = {pid: [] for pid in student_eligible_prefs}
+    student_next_pref_idx = {pid: 0 for pid in student_eligible_prefs}
+    
+    # opportunity_matches: opportunity_id -> list of matched student dicts
+    opportunity_matches = {}
+    for _, row in qualified_df.iterrows():
+        oid = row["opportunity_id"]
+        if oid not in opportunity_matches:
+            opportunity_matches[oid] = []
+            
+    free_students = set(student_eligible_prefs.keys())
+    
+    while free_students:
+        pid = free_students.pop()
+        
+        # If student already has MAX_OFFERS matches, they shouldn't propose
+        if len(student_matches[pid]) >= MAX_OFFERS:
+            continue
+            
+        # Get next preference index
+        idx = student_next_pref_idx[pid]
+        if idx >= len(student_eligible_prefs[pid]):
+            # No more preferences left
+            continue
+            
+        # Get preference to propose to
+        pref = student_eligible_prefs[pid][idx]
+        student_next_pref_idx[pid] += 1 # Advance pointer for next time
+        
+        oid = pref["opportunity_id"]
+        seats = pref["seats"]
+        score = pref["score"]
+        
+        # Propose to opportunity oid
+        current_matches = opportunity_matches[oid]
+        
+        if len(current_matches) < seats:
+            # We have an empty seat! Accept tentatively.
+            opportunity_matches[oid].append(pref)
+            student_matches[pid].append(pref)
+            # Keep sorted by score ascending so the lowest score is at index 0
+            opportunity_matches[oid].sort(key=lambda x: x["score"])
+        else:
+            # Opportunity is full. Compare current proposal score with the lowest matched score.
+            worst_match = current_matches[0]
+            if score > worst_match["score"]:
+                # Accept new student, reject the worst matched student
+                worst_pid = worst_match["profile_id"]
+                
+                # Remove worst match from opportunity and student
+                opportunity_matches[oid].remove(worst_match)
+                student_matches[worst_pid].remove(worst_match)
+                
+                # The rejected student is now free to propose again (if they weren't already free)
+                if len(student_matches[worst_pid]) < MAX_OFFERS and student_next_pref_idx[worst_pid] < len(student_eligible_prefs[worst_pid]):
+                    free_students.add(worst_pid)
+                    
+                # Add new match to opportunity and student
+                opportunity_matches[oid].append(pref)
+                student_matches[pid].append(pref)
+                opportunity_matches[oid].sort(key=lambda x: x["score"])
+            else:
+                # Reject this proposal
+                pass
+                
+        # If student still has capacity and more preferences, put them back to free_students
+        if len(student_matches[pid]) < MAX_OFFERS and student_next_pref_idx[pid] < len(student_eligible_prefs[pid]):
+            free_students.add(pid)
+            
+    # 3. Finalize Allocation and Waiting lists
+    # Track waitlists per student to enforce MAX_WAITING
+    student_waitlists = {}
+    
+    # Group the original qualified candidates by opportunity to construct waitlists and finalize
+    for opportunity_id, group in qualified_df.groupby("opportunity_id"):
         seats = group["seats"].iloc[0]
         min_score = group["min_score"].iloc[0]
         role_name = group["role"].iloc[0]
         company_name = group["company_name"].iloc[0]
         
-        # 1. Rank candidates by score (highest first)
-        ranked_candidates = group.sort_values(by="score", ascending=False)
+        # Matched candidates under Gale-Shapley
+        matches = opportunity_matches.get(opportunity_id, [])
+        allocated_pids = {m["profile_id"] for m in matches}
         
-        allocated_count = 0
-        waiting_list = []
-        
-        # 2. Iterate through ranked list and apply student caps
-        for _, row in ranked_candidates.iterrows():
-            pid = row["profile_id"]
+        # Save matches as Allocated
+        for row_dict in matches:
+            row_copy = row_dict.copy()
+            row_copy["status"] = "Allocated"
+            final_allocation_rows.append(row_copy)
+            # Send email
+            send_email(row_copy["email"], row_copy["student_name"], role_name, company_name, row_copy["score"], row_copy["profile_id"], opportunity_id, "Allocated")
             
-            # Check student limits
-            offers = student_offers.get(pid, 0)
-            waiting = student_waitlists.get(pid, 0)
-            
-            # Check if student already accepted an offer (HIGH PRIORITY CHECK)
-            # We assume a separate table or column `accepted_opportunity_id` exists in student_profiles
-            # For this initial run, we skip this DB check. The acceptance logic will handle future runs.
-
-            is_allocated = False
-            
-            if allocated_count < seats:
-                # Try to allocate a seat
-                if offers < MAX_OFFERS:
-                    final_allocation_rows.append(row.to_dict())
-                    final_allocation_rows[-1]["status"] = "Allocated"
-                    student_offers[pid] = offers + 1
-                    allocated_count += 1
-                    is_allocated = True
-                else:
-                    # Not enough offers left for the student, but seats are available. Put on waitlist if possible.
-                    if waiting < MAX_WAITING:
-                        waiting_list.append(row.to_dict())
-                        student_waitlists[pid] = waiting + 1
-            else:
-                # Seats are full. Put on waitlist if possible.
-                if waiting < MAX_WAITING:
-                    waiting_list.append(row.to_dict())
-                    student_waitlists[pid] = waiting + 1
-
+        allocated_count = len(matches)
         
-        # 3. Finalize Allocation and Waiting lists for the Opportunity
+        # Construct waitlist from remaining qualified candidates who were not allocated to this opportunity
+        all_candidates_for_oid = [pref for pref in eligible_prefs if pref["opportunity_id"] == opportunity_id] if 'eligible_prefs' in locals() else [pref for pref in allocation_status_rows if pref["opportunity_id"] == opportunity_id and pref["status"] == "Qualified"]
+        waiting_candidates = [cand for cand in all_candidates_for_oid if cand["profile_id"] not in allocated_pids]
         
-        # Process allocated students
-        for row in final_allocation_rows:
-            if row["opportunity_id"] == opportunity_id and row["status"] == "Allocated":
-                # Send email (no waiting rank needed)
-                send_email(row["email"], row["student_name"], role_name, company_name, row["score"], row["profile_id"], opportunity_id, "Allocated")
-
-        # Process waiting students
-        for rank, row_dict in enumerate(waiting_list, 1):
-            row_dict["status"] = "Waiting"
-            final_allocation_rows.append(row_dict)
-            # Send email with waiting rank
-            send_email(row_dict["email"], row_dict["student_name"], role_name, company_name, row_dict["score"], row_dict["profile_id"], opportunity_id, "Waiting", waiting_rank=rank)
-
-
-        # 4. Save Seat Summary
+        # Sort waiting candidates by score (highest first)
+        waiting_candidates.sort(key=lambda x: x["score"], reverse=True)
+        
+        waiting_count = 0
+        for cand in waiting_candidates:
+            if waiting_count >= MAX_WAITING:
+                break
+                
+            pid = cand["profile_id"]
+            current_wait_count = student_waitlists.get(pid, 0)
+            
+            # Check student waitlist capacity
+            if current_wait_count < MAX_WAITING:
+                cand_copy = cand.copy()
+                cand_copy["status"] = "Waiting"
+                final_allocation_rows.append(cand_copy)
+                student_waitlists[pid] = current_wait_count + 1
+                
+                # Send email with waitlist rank
+                send_email(cand_copy["email"], cand_copy["student_name"], role_name, company_name, cand_copy["score"], cand_copy["profile_id"], opportunity_id, "Waiting", waiting_rank=waiting_count+1)
+                waiting_count += 1
+                
+        # Save Seat Summary
         remaining_seats = max(seats - allocated_count, 0)
         seat_summary_rows.append({
             "opportunity_id": opportunity_id,

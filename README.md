@@ -173,7 +173,7 @@ cd "Full Stack/starter pack"
 # Navigate to backend
 cd my-app-backend
 
-# Install dependencies
+# Install dependencie
 pip install -r requirements.txt
 
 # Configure database (update db.py with your credentials)

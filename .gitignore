@@ -21,3 +21,14 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# custom env and credentials
+.env
+twilio account details
+*credentials*
+
+# python cache
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd

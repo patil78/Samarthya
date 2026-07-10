@@ -49,7 +49,7 @@ const processChartData = (students = []) => {
 
 
 const AdminAnalyticsView = ({ setView }) => {
-  const [students, setStudents] = useState([]);
+  const [students] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

@@ -49,9 +49,13 @@ const SignupPage = () => {
       if (!response.ok) {
         throw new Error(data.detail || 'Signup failed.');
       }
+
+      //extra code
+      localStorage.setItem("onboardingStep", "aadhaar");
       
       setMessage(data.message);
       alert('Signup successful! Please log in.');
+      
       navigate('/login');
 
     } catch (err) {

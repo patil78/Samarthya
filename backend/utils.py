@@ -61,7 +61,15 @@ def check_resume_format(file_path: str) -> bool:
 nlp = spacy.load("en_core_web_sm")
 
 # HuggingFace NER pipeline for organizations (college/school detection)
-ner_pipeline = pipeline("ner", model="dslim/bert-base-NER", grouped_entities=True)
+
+# ner_pipeline = pipeline("ner", model="dslim/bert-base-NER", grouped_entities=True)
+
+#extra vala code
+ner_pipeline = pipeline(
+    "ner",
+    model="dslim/bert-base-NER",
+    aggregation_strategy="simple"
+)
 
 # Skills list (from company dataset)
 SKILLS_LIST = [
@@ -118,17 +126,62 @@ def parse_resume(file_path: str):
     return {"skills": skills, "education": education}
 
 
+# def extract_basic_details(file_path):
+#     try:
+#         text = extract_text(file_path)
+#     except Exception:
+#         return {"name": "", "email": "", "mobile": "", "dob": ""}
+#     name_match = re.search(r"Name[:\-]\s*(.*)", text, re.IGNORECASE)
+#     email_match = re.search(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+", text)
+#     mobile_match = re.search(r"\b\d{10}\b", text)
+#     dob_match = re.search(r"\b(?:\d{2}[-/]\d{2}[-/]\d{4}|\d{4}-\d{2}-\d{2})\b", text)
+#     return {
+#         "name": name_match.group(1).strip() if name_match else "",
+#         "email": email_match.group(0) if email_match else "",
+#         "mobile": mobile_match.group(0) if mobile_match else "",
+#         "dob": dob_match.group(0) if dob_match else ""
+#     }
+
+#yeh extra vala part ahi code ka
 def extract_basic_details(file_path):
     try:
         text = extract_text(file_path)
     except Exception:
         return {"name": "", "email": "", "mobile": "", "dob": ""}
-    name_match = re.search(r"Name[:\-]\s*(.*)", text, re.IGNORECASE)
-    email_match = re.search(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+", text)
+
+    # -----------------------------
+    # NAME EXTRACTION (FIXED)
+    # -----------------------------
+    lines = text.split("\n")
+
+    name = ""
+    for line in lines:
+        clean_line = line.strip()
+        if clean_line and len(clean_line) < 50:
+            name = clean_line
+            break
+
+    # -----------------------------
+    # EMAIL EXTRACTION
+    # -----------------------------
+    email_match = re.search(
+        r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+", text
+    )
+
+    # -----------------------------
+    # MOBILE EXTRACTION
+    # -----------------------------
     mobile_match = re.search(r"\b\d{10}\b", text)
-    dob_match = re.search(r"\b(?:\d{2}[-/]\d{2}[-/]\d{4}|\d{4}-\d{2}-\d{2})\b", text)
+
+    # -----------------------------
+    # DOB EXTRACTION
+    # -----------------------------
+    dob_match = re.search(
+        r"\b(?:\d{2}[-/]\d{2}[-/]\d{4}|\d{4}-\d{2}-\d{2})\b", text
+    )
+
     return {
-        "name": name_match.group(1).strip() if name_match else "",
+        "name": name,
         "email": email_match.group(0) if email_match else "",
         "mobile": mobile_match.group(0) if mobile_match else "",
         "dob": dob_match.group(0) if dob_match else ""
