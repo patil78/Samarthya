@@ -15,3 +15,5 @@ sentence-transformers
 sqlalchemy
 pymysql
 cryptography
+google-auth
+requests
