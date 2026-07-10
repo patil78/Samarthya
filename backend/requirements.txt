@@ -17,3 +17,4 @@ pymysql
 cryptography
 google-auth
 requests
+python-multipart
