@@ -10,4 +10,8 @@ torch
 scikit-learn
 pandas
 twilio
-
+python-dotenv
+sentence-transformers
+sqlalchemy
+pymysql
+cryptography
