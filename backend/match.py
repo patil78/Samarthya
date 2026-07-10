@@ -1,10 +1,8 @@
 import pandas as pd
 from sqlalchemy import create_engine, text
-from sklearn.metrics.pairwise import cosine_similarity
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import smtplib
-from sentence_transformers import SentenceTransformer
 import json
 
 # --- CONFIGURATION ---
@@ -39,6 +37,7 @@ _model = None
 def get_model():
     global _model
     if _model is None:
+        from sentence_transformers import SentenceTransformer
         print("🤖 Loading SentenceTransformer('all-MiniLM-L6-v2')...")
         _model = SentenceTransformer('all-MiniLM-L6-v2')
         print("🤖 SentenceTransformer loaded successfully!")
@@ -129,6 +128,7 @@ def skill_score(student_skills_json, company_skills):
     student_emb = model.encode(student_text)
     company_emb = model.encode(company_text)
 
+    from sklearn.metrics.pairwise import cosine_similarity
     # Cosine similarity
     score = cosine_similarity([student_emb], [company_emb])[0][0]
     return float(score)

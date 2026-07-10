@@ -1,8 +1,6 @@
 import os
 from pathlib import Path
 from pdfminer.high_level import extract_text
-import spacy
-from transformers import pipeline
 import re
 import json
 
@@ -66,6 +64,7 @@ _ner_pipeline = None
 def get_ner_pipeline():
     global _ner_pipeline
     if _ner_pipeline is None:
+        from transformers import pipeline
         print("🤖 Loading HuggingFace NER pipeline (bert-base-NER)...")
         _ner_pipeline = pipeline(
             "ner",
