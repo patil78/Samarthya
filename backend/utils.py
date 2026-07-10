@@ -57,19 +57,23 @@ def check_resume_format(file_path: str) -> bool:
     return True
 
 # ... (The rest of your parsing functions like extract_skills, parse_resume, etc., are unchanged)
-# Load spaCy model
-nlp = spacy.load("en_core_web_sm")
+# Load spaCy model (commented out to save memory as it is unused in this file)
+# nlp = spacy.load("en_core_web_sm")
 
-# HuggingFace NER pipeline for organizations (college/school detection)
+# HuggingFace NER pipeline for organizations (college/school detection) - lazy loaded
+_ner_pipeline = None
 
-# ner_pipeline = pipeline("ner", model="dslim/bert-base-NER", grouped_entities=True)
-
-#extra vala code
-ner_pipeline = pipeline(
-    "ner",
-    model="dslim/bert-base-NER",
-    aggregation_strategy="simple"
-)
+def get_ner_pipeline():
+    global _ner_pipeline
+    if _ner_pipeline is None:
+        print("🤖 Loading HuggingFace NER pipeline (bert-base-NER)...")
+        _ner_pipeline = pipeline(
+            "ner",
+            model="dslim/bert-base-NER",
+            aggregation_strategy="simple"
+        )
+        print("🤖 NER pipeline loaded successfully!")
+    return _ner_pipeline
 
 # Skills list (from company dataset)
 SKILLS_LIST = [
@@ -93,7 +97,7 @@ def extract_skills(text: str):
 def extract_education(text: str):
     education = []
     try:
-        ner_results = ner_pipeline(text)
+        ner_results = get_ner_pipeline()(text)
         for ent in ner_results:
             if ent['entity_group'] == 'ORG':
                 education.append({"institution": ent['word']})

@@ -33,15 +33,24 @@ engine = create_engine(
     pool_recycle=280,
     pool_pre_ping=True
 )
-model = SentenceTransformer('all-MiniLM-L6-v2')
+
+_model = None
+
+def get_model():
+    global _model
+    if _model is None:
+        print("🤖 Loading SentenceTransformer('all-MiniLM-L6-v2')...")
+        _model = SentenceTransformer('all-MiniLM-L6-v2')
+        print("🤖 SentenceTransformer loaded successfully!")
+    return _model
 
 # --- EMAIL FUNCTION (Updated to handle waiting number) ---
 def send_email(receiver, student_name, role_name, company_name, score, profile_id, opportunity_id, status, waiting_rank=None):
     sender = SENDER_EMAIL
     password = EMAIL_PASSWORD
 
-    accept_link = f"https://purple-dancers-cut.loca.lt/api/respond?profile_id={profile_id}&opportunity_id={opportunity_id}&response=Accepted"
-    reject_link = f"https://purple-dancers-cut.loca.lt/api/respond?profile_id={profile_id}&opportunity_id={opportunity_id}&response=Rejected"
+    accept_link = f"https://samarthya-backend.onrender.com/api/respond?profile_id={profile_id}&opportunity_id={opportunity_id}&response=Accepted"
+    reject_link = f"https://samarthya-backend.onrender.com/api/respond?profile_id={profile_id}&opportunity_id={opportunity_id}&response=Rejected"
 
     subject = f"Internship Allocation - {company_name}"
     
@@ -115,6 +124,7 @@ def skill_score(student_skills_json, company_skills):
     if not student_text or not company_text:
         return 0.0
 
+    model = get_model()
     # Convert to embeddings
     student_emb = model.encode(student_text)
     company_emb = model.encode(company_text)
