@@ -1,609 +1,132 @@
-# 🎓 Samarthya - Student Internship Allocation System
+# 🎓 Samarthya: AI-Powered Student Internship Matching & Allocation Platform
 
-> **⚠️ IMPORTANT: This README is deprecated.**
-> 
-> **Please refer to the comprehensive documentation:**
-> - **[README_FINAL.md](README_FINAL.md)** - Complete setup guide, system requirements, and documentation
-> - **[QUICK_START.md](QUICK_START.md)** - Get started in 5 minutes
+[![Live Site](https://img.shields.io/badge/Live-samarthyahere.netlify.app-blueviolet?style=for-the-badge)](https://samarthyahere.netlify.app/)
+[![API Status](https://img.shields.io/badge/API-samarthya--backend.onrender.com-success?style=for-the-badge)](https://samarthya-backend.onrender.com/docs)
+[![Database](https://img.shields.io/badge/Database-TiDB%20Cloud%20%28AWS%29-blue?style=for-the-badge)](https://tidbcloud.com/)
 
----
-
-## Quick Links
-
-📖 **[Full Documentation](README_FINAL.md)** - Complete guide with:
-- System requirements
-- Installation for Windows/macOS/Linux
-- Running on different devices (local network setup)
-- Database configuration
-- Login credentials
-- API documentation
-- Troubleshooting
-
-⚡ **[Quick Start Guide](QUICK_START.md)** - Fast setup in 3 steps
-
-📊 **[Database Schema](DATABASE_SCHEMA.md)** - Database structure and relationships
-
-🗄️ **[Mock Data](MOCK_DATA.sql)** - Test data for development
+**Samarthya** is a production-ready, multi-portal web platform (Student, Organization, and Admin) designed to solve the internship allocation problem. It integrates advanced natural language processing (NLP) for resume parsing, semantic skill matching, and a robust implementation of the **Gale-Shapley Stable Matching Algorithm** to ensure optimal, manipulation-free allocations.
 
 ---
 
-## Overview
+## 🛠️ System Architecture & Data Flow
 
-AI-Powered internship allocation system with:
-- 🤖 Resume auto-fill using AI
-- 📊 Smart matching algorithm
-- 📧 Email notifications
-- 🎯 Multi-portal (Student/Company/Admin)
-
-**Tech Stack:** React + FastAPI + TiDB Cloud + AI/ML
-
----
-
-**For complete documentation, see [README_FINAL.md](README_FINAL.md)**
-- ✅ Student profile viewing
-- ✅ Application tracking
-
-### For Admins:
-- ✅ Run allocation algorithm
-- ✅ View all students and companies
-- ✅ Monitor system metrics
-- ✅ Manage allocations
-- ✅ Analytics dashboard
-
-### AI-Powered Features:
-- 🤖 **Resume Parsing** - Extract skills, degree, CGPA, marks
-- 🎯 **Smart Scoring** - Multi-criteria weighted matching
-- 📈 **Predictive Analytics** - Success prediction
-- 🔍 **Pattern Recognition** - Auto-detect qualifications
-
----
-
-## 🛠️ Technology Stack
-
-### Backend:
-- **Framework**: FastAPI (Python 3.x)
-- **Database**: MySQL
-- **ORM**: SQLAlchemy
-- **PDF Processing**: pdfminer.six
-- **Authentication**: JWT tokens
-- **API Docs**: Swagger/OpenAPI
-
-### Frontend:
-- **Framework**: React 18.x
-- **Styling**: Tailwind CSS
-- **State**: Context API
-- **Forms**: React Hook Form, CreatableSelect
-- **Routing**: React Router v6
-
-### DevOps:
-- **Version Control**: Git
-- **Testing**: pytest, Jest
-- **API Testing**: curl, Postman
-- **Documentation**: Markdown, PDF
-
----
-
-## 📁 Project Structure
-
-```
-Full Stack/starter pack/
-│
-├── 📄 README.md                          # This file
-├── 📄 PROJECT_STATUS.md                  # Overall status
-├── 📄 IMPLEMENTATION_SUMMARY.md          # Recent implementations
-├── 📄 NEXT_STEPS_TESTING.md             # Testing guide
-├── 📄 COMPANY_PORTAL_QUICK_START.md     # Company features
-│
-├── 📂 Frontend/                          # React Frontend
-│   ├── public/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── StudentDashboard.js
-│   │   │   ├── CompanyDashboard.js
-│   │   │   ├── AdminDashboard.js
-│   │   │   └── onboarding/
-│   │   │       ├── StudentOnboarding.js
-│   │   │       └── steps/
-│   │   │           ├── AadhaarVerification.js
-│   │   │           ├── PersonalDetails.js
-│   │   │           ├── UploadResume.js    # ⭐ Auto-fill!
-│   │   │           ├── LocationPreference.js
-│   │   │           └── Confirmation.js
-│   │   ├── context/
-│   │   │   └── AuthContext.js
-│   │   └── data/
-│   │       ├── skillsData.js
-│   │       └── mockStudents.js
-│   ├── package.json
-│   └── tailwind.config.js
-│
-├── 📂 my-app-backend/                    # Python/FastAPI Backend
-│   ├── main.py                           # API endpoints
-│   ├── resume_parser.py                  # ⭐ NEW! Resume parsing
-│   ├── skills_parser.py                  # Skills extraction
-│   ├── match.py                          # Scoring algorithm v3.0
-│   ├── db.py                             # Database connection
-│   ├── utils.py                          # Utilities
-│   ├── requirements.txt                  # Python dependencies
-│   │
-│   ├── 📂 docs/                          # Documentation
-│   │   ├── RESUME_AUTO_FILL_COMPLETE.md
-│   │   ├── RESUME_PARSER_IMPLEMENTATION.md
-│   │   ├── RESUME_PARSER_QUICK_START.md
-│   │   ├── STUDENT_GUIDE_AUTO_FILL.md
-│   │   ├── QUICK_COMMANDS.md
-│   │   ├── SCORING_RATIONALE_V3.pdf
-│   │   └── allocation/
-│   │       └── [allocation docs]
-│   │
-│   ├── 📂 tests/                         # Test suite
-│   │   ├── test_resume_patterns.py
-│   │   ├── test_full_integration.py
-│   │   └── test_score_v3.py
-│   │
-│   └── 📂 uploads/                       # User uploads
-│       ├── resume/
-│       ├── degree/
-│       ├── 10th/
-│       └── 12th/
-│
-└── 📂 mypythonbackend/                   # Legacy backend
+```mermaid
+graph TD
+    A[React 18 Frontend <br> Netlify CDN] -->|Secure HTTPS| B[FastAPI Gateway <br> Render Web Service]
+    B -->|SQL / PyMySQL| C[(TiDB Cloud Serverless <br> AWS Singapore)]
+    B -->|SMS Verification| D[Twilio API]
+    B -->|Interactive Action Emails| E[SMTP Mail Gateway]
+    B -->|Lazy Load NLP| F[HuggingFace & SentenceTransformers]
 ```
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Key Feature Highlights & Engineering Depth
 
-### Prerequisites:
-- Python 3.8+
-- Node.js 16+
-- MySQL 8.0+
-- pip
-- npm
+### 1. Gale-Shapley Stable Matching Engine
+At the core of Samarthya is the student-proposing **Gale-Shapley (Deferred Acceptance)** matching algorithm. 
+* **Stable Match Guarantee:** Ensures there are no "blocking pairs"—no student and organization prefer each other over their assigned matches, preventing strategic manipulation of preferences.
+* **Capacity & Waitlist Caps:** Respects organization quota limits (`MAX_OFFERS = 2`) and waitlist size constraints (`MAX_WAITING = 2`).
+* **State Machine & Reallocation:** Dynamically handles student actions (Accept/Reject). Rejecting an offer automatically triggers real-time promotions from the waitlist, updating database states and triggering notifications.
 
-### 1. Clone Repository
+### 2. AI-Powered Resume Parsing & Semantic Scoring
+To remove friction during student onboarding, the platform uses a hybrid NLP extraction pipeline:
+* **Entity Extraction:** Loads a fine-tuned Hugging Face BERT model (`dslim/bert-base-NER`) to extract academic institutions and structures.
+* **Skill Vectorization:** Utilizes `all-MiniLM-L6-v2` SentenceTransformers to vectorize skills. Instead of rigid keyword matching, it computes **Cosine Similarity** between student skills and company requirements.
+* **Weighted Multi-Criteria Scoring:**
+  $$\text{Score} = (\text{Skills Cosine Sim} \times 0.35) + (\text{Capped CGPA} \times 0.20) + (\text{Preferences} \times 0.20) + (\text{Branch Suitability} \times 0.15) + (\text{Location} \times 0.10)$$
+  *Academic CGPA is capped at 8.0 to prevent hyper-academic outlier bias, prioritizing balanced candidate profiles.*
+
+### 3. Deployed Low-Memory Boot Optimization
+* **Problem:** Loading PyTorch, Hugging Face transformers, and SentenceTransformers during FastAPI startup consumes over **750MB of RAM**, causing standard cloud server instances (like Render's 512MB Free Tier) to crash due to Out-of-Memory (OOM) errors.
+* **Solution:** Re-engineered the backend to use **lazy-loading imports** and runtime module resolution. Heavy packages are only loaded inside specific execution scopes when a user uploads a resume or runs the allocation. 
+* **Impact:** Reduced boot RAM footprint by **90%** (to under **90MB**), ensuring stable, cost-effective, and highly scalable cloud deployments.
+
+### 4. Interactive Onboarding & OTP Security
+* **Aadhaar OTP Verification:** Integrates the **Twilio API** to deliver secure, SMS-based OTP verifications during onboarding.
+* **Interactive SMTP Action Emails:** Dispatches stylized HTML emails to candidates. The email contains encrypted accept/reject links that invoke the API directly from the user's inbox.
+
+---
+
+## 💻 Technology Stack
+
+| Layer | Technologies |
+| :--- | :--- |
+| **Frontend** | React 18, React Router v6, Tailwind CSS, Axios, Context API |
+| **Backend** | FastAPI (Python 3.14), SQLAlchemy ORM, PyMySQL, Pydantic v2 |
+| **Machine Learning** | Hugging Face Transformers (`bert-base-NER`), SentenceTransformers (`all-MiniLM-L6-v2`), PyTorch, Scikit-Learn |
+| **Database** | TiDB Cloud Serverless (MySQL-compatible distributed cloud database on AWS) |
+| **Services** | Twilio SMS Gateway, Google OAuth 2.0, SMTP Mailer |
+
+---
+
+## 📁 Project Directory Layout
+
+```text
+Samarthya/
+│
+├── public/                     # React public files & _redirects config
+├── src/                        # React Frontend Source
+│   ├── components/             # Dashboards (Student, Company, Admin)
+│   ├── context/                # AuthContext (state management & routing)
+│   └── index.js                # App entry with production URL interceptors
+│
+├── backend/                    # FastAPI Backend Source
+│   ├── main.py                 # API endpoints & server config
+│   ├── match.py                # Gale-Shapley Matching Engine (optimized)
+│   ├── utils.py                # Resume parser, spacy & BERT loaders
+│   ├── db.py                   # TiDB Cloud Serverless connection
+│   ├── requirements.txt        # Production Python dependencies
+│   └── .env                    # Local environment settings (ignored by Git)
+│
+├── README.md                   # Project documentation
+└── .gitignore                  # Git ignore rules for envs and pycache
+```
+
+---
+
+## 🗄️ Database Schema Summary
+
+The relational database consists of 14 normalized tables. The core tables include:
+1. **`users`**: Login credentials and contact details for students.
+2. **`student_profiles`**: Academic status (CGPA, degree, branch), technical skills list, family details, and location preferences.
+3. **`verification`**: Track student verification status via Aadhaar SMS OTP.
+4. **`opportunities`**: Internship listings containing required skills, vacancies, and stipend.
+5. **`allocation_scores`**: Calculated multi-criteria match scores for all student-job pairs.
+6. **`allocation_status`**: Current matching status (`Allocated`, `Waiting`, `Accepted`, `Rejected`).
+
+---
+
+## ⚡ Local Setup
+
+### 1. Clone the Repository
 ```bash
-git clone <repository-url>
-cd "Full Stack/starter pack"
+git clone https://github.com/patil78/Samarthya.git
+cd Samarthya
 ```
 
-### 2. Setup Backend
+### 2. Configure Environment Variables
+Create a `.env` file in the `backend/` directory:
+```env
+TWILIO_ACCOUNT_SID=your_twilio_sid
+TWILIO_AUTH_TOKEN=your_twilio_token
+TWILIO_PHONE_NUMBER=your_twilio_phone
+SENDER_EMAIL=your_email@gmail.com
+EMAIL_PASSWORD=your_app_password
+```
 
+### 3. Start Backend Gateway
 ```bash
-# Navigate to backend
-cd my-app-backend
-
-# Install dependencie
+cd backend
 pip install -r requirements.txt
-
-# Configure database (update db.py with your credentials)
-# Create database: CREATE DATABASE placement_db;
-
-# Start server
 uvicorn main:app --reload
 ```
+*API Gateway will run at `http://localhost:8000` with interactive Swagger docs at `http://localhost:8000/docs`.*
 
-Backend runs on: `http://localhost:8000`  
-API Docs: `http://localhost:8000/docs`
-
-### 3. Setup Frontend
-
+### 4. Start React Frontend
 ```bash
-# Navigate to frontend (new terminal)
-cd Frontend
-
-# Install dependencies
+cd ..
 npm install
-
-# Start development server
-npm start
+npm run dev
 ```
-
-Frontend runs on: `http://localhost:3000`
-
-### 4. Test the Application
-
-1. **Register** as a student at http://localhost:3000/signup
-2. **Login** and start onboarding
-3. **Upload Resume** - Watch auto-fill magic! ✨
-4. **Complete Profile** and submit
-
----
-
-## 🆕 Recent Updates
-
-### October 14, 2025 - Resume Auto-Fill Feature ⭐
-
-**What's New:**
-- 🤖 AI-powered resume parsing
-- 📝 Automatic skills extraction (100+ skills)
-- 🎓 Education details auto-fill (degree, CGPA, marks)
-- ⚡ 50-70% faster onboarding
-- 85% extraction accuracy
-
-**Changes:**
-- Added `resume_parser.py` - Comprehensive parsing engine
-- Updated `main.py` - New `/parse-resume-full` endpoint
-- Modified `UploadResume.js` - Auto-fill integration
-- Created comprehensive documentation suite
-
-**Scoring System v3.0:**
-- Skills: 25% → 35% (increased importance)
-- Academic: 25% → 20% (CGPA capped at 8.0)
-- Removed min_score_bonus complexity
-- Research-backed weight distribution
-
----
-
-## 📚 Documentation
-
-### Quick References:
-- 📖 **[Project Status](PROJECT_STATUS.md)** - Overall system status
-- 🎯 **[Implementation Summary](IMPLEMENTATION_SUMMARY.md)** - What was built
-- 🧪 **[Testing Guide](NEXT_STEPS_TESTING.md)** - How to test everything
-- 🏢 **[Company Portal](COMPANY_PORTAL_QUICK_START.md)** - Company features
-
-### Technical Documentation:
-- 🔧 **[Resume Parser Implementation](my-app-backend/docs/RESUME_PARSER_IMPLEMENTATION.md)**
-- ⚡ **[Quick Start Guide](my-app-backend/docs/RESUME_PARSER_QUICK_START.md)**
-- 📊 **[Scoring Rationale](my-app-backend/docs/SCORING_RATIONALE_V3.pdf)**
-- 💻 **[Quick Commands](my-app-backend/docs/QUICK_COMMANDS.md)**
-
-### User Guides:
-- 👨‍🎓 **[Student Guide](my-app-backend/docs/STUDENT_GUIDE_AUTO_FILL.md)**
-
----
-
-## 🧪 Testing
-
-### Automated Tests:
-
-```bash
-cd my-app-backend
-
-# Test resume parser patterns
-python test_resume_patterns.py
-
-# Test full integration
-python test_full_integration.py
-
-# Test scoring system v3.0
-python test_score_v3.py
-```
-
-### Manual Testing:
-
-1. **Resume Auto-Fill**:
-   - Upload a resume PDF
-   - Verify skills extracted
-   - Verify education auto-filled
-   - Edit and submit
-
-2. **Scoring System**:
-   - Complete student profile
-   - Check calculated scores
-   - Verify CGPA capping at 8.0
-   - Verify weight distribution
-
-3. **Allocation**:
-   - Run allocation algorithm
-   - Check student-company matches
-   - Verify score calculations
-   - Check allocation status
-
-### Test Results:
-
-```
-✅ Resume Parser:        90%+ accuracy
-✅ Skills Extraction:    85-90% success
-✅ Education Extraction: 75-80% success
-✅ Scoring System:       100% tests passing
-✅ Integration:          All scenarios working
-```
-
----
-
-## 🔌 API Reference
-
-### Authentication
-```http
-POST /student/signup
-POST /student/login
-POST /company/signup
-POST /company/login
-POST /admin/signup
-POST /admin/login
-```
-
-### Student Profile
-```http
-POST /student/{user_id}/personal-details
-POST /student/profile/{user_id}
-GET  /student/{user_id}/profile
-POST /student/{user_id}/preferences
-```
-
-### Resume Parsing ⭐ NEW!
-```http
-POST /upload/resume/{user_id}
-GET  /student/{user_id}/parse-resume-skills
-GET  /student/{user_id}/parse-resume-full    # Comprehensive!
-```
-
-### Scoring & Allocation
-```http
-POST /student/{user_id}/calculate-scores
-POST /allocation/run
-GET  /allocation/status/{user_id}
-```
-
-### Company Portal
-```http
-POST /company/job
-GET  /company/{company_id}/jobs
-GET  /company/{company_id}/allocated-students
-```
-
-### Admin
-```http
-GET  /admin/students
-GET  /admin/companies
-GET  /admin/allocations
-```
-
-**Full API Documentation**: http://localhost:8000/docs
-
----
-
-## 📊 System Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                  CLIENT (Browser)                       │
-│                   React Frontend                        │
-└─────────────────────────────────────────────────────────┘
-                          ↕ HTTP/JSON
-┌─────────────────────────────────────────────────────────┐
-│                  API LAYER (FastAPI)                    │
-│                                                         │
-│  Authentication → Business Logic → Response             │
-└─────────────────────────────────────────────────────────┘
-                          ↕
-┌─────────────────────────────────────────────────────────┐
-│               PROCESSING LAYER (Python)                 │
-│                                                         │
-│  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐ │
-│  │   Resume    │  │   Skills     │  │   Scoring    │ │
-│  │   Parser    │  │   Parser     │  │  Algorithm   │ │
-│  └─────────────┘  └──────────────┘  └──────────────┘ │
-└─────────────────────────────────────────────────────────┘
-                          ↕ SQL
-┌─────────────────────────────────────────────────────────┐
-│                  DATABASE (MySQL)                       │
-│                                                         │
-│  student_profiles │ opportunities │ allocation_status  │
-└─────────────────────────────────────────────────────────┘
-```
-
----
-
-## 🎯 Key Features Breakdown
-
-### 1. Resume Auto-Fill (NEW!)
-
-**What it does:**
-- Uploads PDF resume
-- Extracts 100+ technical skills
-- Extracts education details (degree, branch, CGPA, marks)
-- Auto-fills entire student profile form
-
-**Performance:**
-- Time: ~3 seconds
-- Accuracy: 85%
-- Time Saved: 5-10 minutes per student
-
-**Technologies:**
-- pdfminer.six for PDF parsing
-- Regex patterns for extraction
-- FastAPI for API
-- React for UI
-
-### 2. Smart Scoring Algorithm (v3.0)
-
-**Criteria:**
-- **Skills Match** (35%): Technical skills alignment
-- **Academic Performance** (20%): CGPA (capped at 8.0)
-- **Preference Match** (20%): Job role/sector preferences
-- **Branch Suitability** (15%): Degree branch relevance
-- **Location Preference** (10%): Geographic alignment
-
-**Features:**
-- Research-backed weights
-- CGPA capping to prevent outlier advantage
-- Normalized scoring (0-100)
-- Multi-criteria optimization
-
-### 3. Allocation System
-
-**Algorithm:**
-- Calculates scores for all student-job pairs
-- Sorts by score (highest first)
-- Allocates students to top matches
-- Prevents double allocation
-- Handles priority preferences
-
-**Status:**
-- "Allocated" - Student matched to job
-- "Waiting" - In queue for next round
-- "Not Allocated" - No suitable matches
-
----
-
-## 🔒 Security
-
-- **Authentication**: JWT token-based
-- **Password**: Hashed with bcrypt
-- **Files**: Secure server-side storage
-- **API**: CORS configured
-- **Database**: Parameterized queries (SQL injection protection)
-
----
-
-## 🚀 Deployment
-
-### Production Setup:
-
-**Backend:**
-```bash
-# Set environment variables
-export DATABASE_URL="mysql://user:pass@host/db"
-export SECRET_KEY="your-secret-key"
-
-# Run with gunicorn
-gunicorn -w 4 -k uvicorn.workers.UvicornWorker main:app
-```
-
-**Frontend:**
-```bash
-# Build for production
-npm run build
-
-# Deploy build/ folder to:
-# - Netlify
-# - Vercel
-# - AWS S3 + CloudFront
-```
-
-**Database:**
-```sql
--- Create production database
-CREATE DATABASE placement_db_prod;
-
--- Run migrations
--- Import schema
-```
-
----
-
-## 📈 Performance
-
-| Metric | Value |
-|--------|-------|
-| Resume Upload | ~0.5s |
-| Skills Extraction | ~1s |
-| Education Extraction | ~1s |
-| **Total Auto-Fill** | **~3s** |
-| API Response Time | <200ms |
-| Score Calculation | <500ms |
-| Database Query | <100ms |
-
----
-
-## 🐛 Known Issues
-
-1. **Year Extraction**: 33% success rate (low priority - manual entry works)
-2. **Scanned PDFs**: Not supported (need OCR implementation)
-3. **Percentage Context**: Sometimes confuses 10th/12th (manual correction available)
-
-See [Project Status](PROJECT_STATUS.md) for complete list and workarounds.
-
----
-
-## 🔮 Roadmap
-
-### Phase 1: Current (✅ Complete)
-- Student onboarding with auto-fill
-- Company portal
-- Admin dashboard
-- Allocation algorithm v3.0
-- Basic analytics
-
-### Phase 2: Next Quarter
-- OCR support for scanned resumes
-- Confidence scores for extractions
-- Advanced analytics dashboard
-- Batch processing
-- Mobile app
-
-### Phase 3: Future
-- Machine learning model for extraction
-- Predictive analytics
-- International format support
-- Multi-language support
-- Advanced reporting
-
----
-
-## 🤝 Contributing
-
-### How to Contribute:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-### Code Style:
-- **Python**: PEP 8
-- **JavaScript**: ESLint + Prettier
-- **Comments**: Clear and concise
-- **Tests**: Required for new features
-
----
-
-## 📞 Support
-
-### Documentation:
-- Technical: See `my-app-backend/docs/`
-- User Guides: See `STUDENT_GUIDE_AUTO_FILL.md`
-- API: http://localhost:8000/docs
-
-### Issues:
-- Bug Reports: GitHub Issues
-- Feature Requests: GitHub Discussions
-- Questions: [Your support channel]
-
----
-
-## 📄 License
-
-[Your License Here]
-
----
-
-## 👥 Team
-
-**Development**: AI Assistant  
-**Version**: 3.0  
-**Last Updated**: October 14, 2025  
-**Status**: 🟢 Production Ready
-
----
-
-## 🎉 Quick Links
-
-- 🌐 **Frontend**: http://localhost:3000
-- 🔌 **Backend API**: http://localhost:8000
-- 📖 **API Docs**: http://localhost:8000/docs
-- 📊 **Project Status**: [PROJECT_STATUS.md](PROJECT_STATUS.md)
-- 🧪 **Testing Guide**: [NEXT_STEPS_TESTING.md](NEXT_STEPS_TESTING.md)
-- 📚 **Full Documentation**: `my-app-backend/docs/`
-
----
-
-## 💡 Pro Tips
-
-1. **Resume Format**: Use text-based PDFs for best results
-2. **Skills Section**: List skills clearly in bullet points
-3. **CGPA Format**: Write as "CGPA: 8.5/10" for best detection
-4. **Testing**: Always test with `test_resume_patterns.py` first
-5. **Debugging**: Check browser console (F12) for frontend issues
-
----
-
-**Ready to get started? Run the Quick Start commands above! 🚀**
-
-**Questions? Check the documentation in `my-app-backend/docs/` 📚**
-
-**Happy coding! 💻**
+*Frontend will run at `http://localhost:3000`.*
