@@ -58,7 +58,7 @@ const Confirmation = ({ data, prevStep, handleSubmit }) => {
           <p><strong>Mother's Name:</strong> {data.motherName || 'Not provided'}</p>
           <p><strong>Mother's Mobile:</strong> {data.motherMobile || 'Not provided'}</p>
           <p><strong>Annual Income:</strong> ₹ {data.annualIncome || 'Not provided'}</p>
-          <p><strong>Income Certificate:</strong> {data.incomeCertificate?.name || 'Not provided'}</p>
+
         </div>
 
         {/* --- Resume and Education Section --- */}

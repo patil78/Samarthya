@@ -53,7 +53,10 @@ const StudentOnboarding = ({ onOnboardingComplete }) => {
     detailsFormData.append('motherName', formData.motherName);
     detailsFormData.append('motherMobile', formData.motherMobile);
     detailsFormData.append('annualIncome', formData.annualIncome);
-    detailsFormData.append('incomeCertificate', formData.incomeCertificate);
+    if (formData.incomeCertificate) {
+      detailsFormData.append('incomeCertificate', formData.incomeCertificate);
+    }
+
 
     try {
         const response = await fetch(`http://127.0.0.1:8000/student/${user.id}/personal-details`, {

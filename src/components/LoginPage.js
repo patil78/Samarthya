@@ -2,11 +2,13 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { GoogleLogin } from '@react-oauth/google';
+import ForgotPasswordModal from './ForgotPasswordModal';
 
 const LoginPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [userType, setUserType] = useState('student');
+  const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
   const { login, loginWithGoogle } = useAuth();
 
   const handleSubmit = async (e) => {
@@ -70,7 +72,16 @@ const LoginPage = () => {
             />
           </div>
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700">Password</label>
+            <div className="flex justify-between items-center">
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700">Password</label>
+              <button
+                type="button"
+                onClick={() => setIsForgotPasswordOpen(true)}
+                className="text-xs font-semibold text-indigo-600 hover:text-indigo-500"
+              >
+                Forgot password?
+              </button>
+            </div>
             <input
               type="password" id="password" value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -115,9 +126,17 @@ const LoginPage = () => {
           </Link>
         </p>
       </div>
+
+      {/* Forgot Password Modal */}
+      <ForgotPasswordModal
+        isOpen={isForgotPasswordOpen}
+        onClose={() => setIsForgotPasswordOpen(false)}
+        initialUserType={userType}
+      />
     </div>
   );
 };
 
 export default LoginPage;
+
 

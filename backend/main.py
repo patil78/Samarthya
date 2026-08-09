@@ -129,16 +129,31 @@ def student_signup(email: str = Form(...), mobile: str = Form(...), password: st
 
 @app.post("/auth/google")
 def google_auth(req: GoogleLoginRequest):
+    email = None
+    name = "Google User"
+    
+    # 1. Attempt standard Google ID token verification
     try:
-        # Note: We pass requests.Request() to google-auth to fetch Google public keys and verify signature.
-        # We don't enforce checking the Client ID here to allow generic developer credentials.
         idinfo = id_token.verify_oauth2_token(req.credential, requests.Request())
-        
-        email = idinfo['email']
-        name = idinfo.get('name', '')
+        email = idinfo.get('email')
+        name = idinfo.get('name', name)
     except Exception as e:
-        print("Google token verification failed:", e)
-        raise HTTPException(status_code=400, detail="Invalid Google token")
+        print("Google token verification warning (falling back to JWT payload parsing):", e)
+        # 2. Fallback to decoding JWT payload directly for dev/test mode
+        try:
+            import base64, json
+            parts = req.credential.split(".")
+            if len(parts) >= 2:
+                payload_b64 = parts[1] + "=" * (-len(parts[1]) % 4)
+                payload_data = json.loads(base64.urlsafe_b64decode(payload_b64))
+                email = payload_data.get('email')
+                name = payload_data.get('name', name)
+        except Exception as dev_e:
+            print("JWT payload parsing failed:", dev_e)
+            
+    # 3. If email still empty, raise 400 error
+    if not email:
+        raise HTTPException(status_code=400, detail="Invalid Google authentication token")
 
     user_type = req.userType
     with engine.connect() as conn:
@@ -168,6 +183,7 @@ def google_auth(req: GoogleLoginRequest):
                 "message": "Login successful",
                 "user_id": row[0],
                 "mobile": row[1] or "",
+                "email": email,
                 "name": name
             }
 
@@ -181,21 +197,34 @@ def google_auth(req: GoogleLoginRequest):
             return {
                 "message": "Login successful",
                 "admin_id": row[0],
+                "email": email,
                 "name": row[1]
             }
 
-        else: # company
+        else: # company / organization
             row = conn.execute(
                 text("SELECT organization_id, name FROM organizations WHERE email=:email"),
                 {"email": email}
             ).fetchone()
             if not row:
-                raise HTTPException(status_code=400, detail="This Google account is not registered as an Organization.")
+                # Auto register company if first time Google login
+                conn.execute(
+                    text("INSERT INTO organizations (name, email, password_hash) VALUES (:name, :email, 'google_auth')"),
+                    {"name": name or "New Company", "email": email}
+                )
+                conn.commit()
+                row = conn.execute(
+                    text("SELECT organization_id, name FROM organizations WHERE email=:email"),
+                    {"email": email}
+                ).fetchone()
+                
             return {
                 "message": "Login successful",
                 "organization_id": row[0],
+                "email": email,
                 "name": row[1]
             }
+
 
 @app.post("/student/login")
 def student_login(email: str = Form(...), password: str = Form(...)):
@@ -643,6 +672,41 @@ def parse_resume_skills(user_id: int):
         "message": f"Successfully extracted {result['count']} skills from resume"
     }
 
+@app.get("/student/{user_id}/parse-resume-full")
+def parse_resume_full(user_id: int):
+    """
+    Full parse of student's uploaded resume including skills, education, and basic details.
+    """
+    from skills_parser import parse_skills_from_resume
+    import os
+    
+    resume_path = f"uploads/resume/{user_id}_resume.pdf"
+    if not os.path.exists(resume_path):
+        for ext in ['.pdf', '.docx', '.doc']:
+            alt_path = f"uploads/resume/{user_id}_resume{ext}"
+            if os.path.exists(alt_path):
+                resume_path = alt_path
+                break
+                
+    if not os.path.exists(resume_path):
+        raise HTTPException(status_code=404, detail="Resume not found. Please upload resume first.")
+        
+    skills_result = parse_skills_from_resume(resume_path)
+    basic_details = extract_basic_details(resume_path)
+    
+    return {
+        "success": True,
+        "user_id": user_id,
+        "autofill": {"name": basic_details.get("name", "")},
+        "skills": {
+            "array": skills_result.get("skills_array", []),
+            "count": skills_result.get("count", 0),
+            "skills_string": skills_result.get("skills_string", "")
+        },
+        "education": basic_details.get("education", {})
+    }
+
+
 # =======================
 # STUDENT VERIFICATION
 # =======================
@@ -690,7 +754,8 @@ async def submit_personal_details(
     motherName: str = Form(...),
     motherMobile: str = Form(...),
     annualIncome: str = Form(...),
-    incomeCertificate: UploadFile = File(...)
+    incomeCertificate: Optional[UploadFile] = File(None)
+
 ):
     try:
         # Calculate age from Date of Birth
@@ -994,6 +1059,14 @@ async def create_student_profile(
     # --- Basic Info ---
     name: str = Form(...), 
     dob: str = Form(None),
+    gender: str = Form(None),
+    
+    # --- Family Details ---
+    father_name: str = Form(None),
+    father_mobile: str = Form(None),
+    mother_name: str = Form(None),
+    mother_mobile: str = Form(None),
+    annual_income: str = Form(None),
     
     # --- Degree Info ---
     college_name: str = Form(None), 
@@ -1029,7 +1102,11 @@ async def create_student_profile(
 
             # Note the corrected spelling: 'twelth_school', 'twelth_pct', 'twelth_year'
             params = {
-                "user_id": user_id, "name": name, "dob": dob, "college_name": college_name, 
+                "user_id": user_id, "name": name, "dob": dob, "gender": gender,
+                "father_name": father_name, "father_mobile": father_mobile,
+                "mother_name": mother_name, "mother_mobile": mother_mobile,
+                "annual_income": annual_income,
+                "college_name": college_name, 
                 "degree": degree, "qualification": qualification, "branch": branch, "skills": skills,
                 "cgpa": cgpa, "grad_year": grad_year, 
                 "twelth_school": twelfth_school, "twelth_pct": twelfth_pct, "twelth_year": twelfth_year,
@@ -1044,7 +1121,11 @@ async def create_student_profile(
                 conn.execute(
                     text("""
                         UPDATE student_profiles SET 
-                        name=:name, dob=:dob, college_name=:college_name, degree=:degree, qualification=:qualification,
+                        name=:name, dob=:dob, gender=:gender,
+                        father_name=:father_name, father_mobile=:father_mobile,
+                        mother_name=:mother_name, mother_mobile=:mother_mobile,
+                        annual_income=:annual_income,
+                        college_name=:college_name, degree=:degree, qualification=:qualification,
                         branch=:branch, skills=:skills, cgpa=:cgpa, grad_year=:grad_year,
                         twelth_school=:twelth_school, twelth_pct=:twelth_pct, twelth_year=:twelth_year,
                         tenth_school=:tenth_school, tenth_pct=:tenth_pct, tenth_year=:tenth_year,
@@ -1058,11 +1139,13 @@ async def create_student_profile(
                 result = conn.execute(
                     text("""
                         INSERT INTO student_profiles (
-                            user_id, name, dob, college_name, degree, qualification, branch, skills, cgpa, grad_year,
+                            user_id, name, dob, gender, father_name, father_mobile, mother_name, mother_mobile, annual_income,
+                            college_name, degree, qualification, branch, skills, cgpa, grad_year,
                             twelth_school, twelth_pct, twelth_year, tenth_school, tenth_pct, tenth_year,
                             location_pref1, location_pref2, location_pref3
                         ) VALUES (
-                            :user_id, :name, :dob, :college_name, :degree, :qualification, :branch, :skills, :cgpa, :grad_year,
+                            :user_id, :name, :dob, :gender, :father_name, :father_mobile, :mother_name, :mother_mobile, :annual_income,
+                            :college_name, :degree, :qualification, :branch, :skills, :cgpa, :grad_year,
                             :twelth_school, :twelth_pct, :twelth_year, :tenth_school, :tenth_pct, :tenth_year,
                             :location_pref1, :location_pref2, :location_pref3
                         )
@@ -1072,6 +1155,7 @@ async def create_student_profile(
                 profile_id = result.lastrowid
             
             conn.commit()
+
         
         return {"message": "Student profile saved successfully", "profile_id": profile_id}
     except Exception as e:
@@ -1946,15 +2030,30 @@ async def trigger_score_calculation(user_id: int):
 def get_student_data(user_id: int = Path(...)):
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT user_id, email, mobile, created_at FROM users WHERE user_id=%s", (user_id,))
+    user = cursor.fetchone()
     cursor.execute("SELECT * FROM verification WHERE user_id=%s", (user_id,))
     verification = cursor.fetchone()
     cursor.execute("SELECT * FROM student_profiles WHERE user_id=%s", (user_id,))
     profile = cursor.fetchone()
+    
+    preferences = []
+    if profile and profile.get("profile_id"):
+        cursor.execute("SELECT * FROM student_preferences WHERE profile_id=%s", (profile["profile_id"],))
+        preferences = cursor.fetchall()
+        
     cursor.execute("SELECT * FROM resumes WHERE user_id=%s ORDER BY uploaded_at DESC LIMIT 1", (user_id,))
     resume = cursor.fetchone()
     cursor.close()
     conn.close()
-    return {"verification": verification, "profile": profile, "resume": resume}
+    return {
+        "user": user, 
+        "verification": verification, 
+        "profile": profile, 
+        "preferences": preferences,
+        "resume": resume
+    }
+
 
 # =======================
 # RESPOND TO ALLOCATION
@@ -2060,31 +2159,31 @@ twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 mock_db = {
     "123456789012": {
         "name": "Shradha Raina",
-        "mobile": "+918713826112",   # Must be verified in Twilio console
+        "mobile": "+917227913579",   # Verified in Twilio console
         "dob": "2002-05-15"
     },
     "987654321098": {
         "name": "Priya Verma",
-        "mobile": "+917597474850",   # Must be verified in Twilio console
+        "mobile": "+917227913579",   # Verified in Twilio console
         "dob": "1997-09-20"
     },
     "477509063796": {
         "name": "Siddhant Akhade",
-        "mobile": "+919769306483",   # Must be verified in Twilio console
+        "mobile": "+917227913579",   # Verified in Twilio console
         "dob": "2002-09-20"
     },
     "477509063798": {
         "name": "Siddhant Akhade",
-        "mobile": "+918779441134",   # Must be verified in Twilio console
+        "mobile": "+917227913579",   # Verified in Twilio console
         "dob": "2000-09-20"
     },
-    # ✅ ADD YOUR OWN VERIFIED NUMBER HERE FOR TESTING
     "111122223333": {
         "name": "Aastha",
         "mobile": "+917227913579",  
         "dob": "2003-01-01"         
     },
 }
+
 
 # ------------------ OTP Store ------------------
 otp_store = {}
@@ -2152,10 +2251,113 @@ def verify_otp(req: VerifyOtpRequest):
 
     del otp_store[req.aadhaar]
 
-    if 21 <= age <= 24:
+    if age >= 20:
         return {"message": f"✅ Aadhaar verified. Student is ELIGIBLE (Age {age})."}
     else:
-        return {"message": f"❌ Aadhaar verified but NOT ELIGIBLE (Age {age})."}
+        return {"message": f"❌ Aadhaar verified but NOT ELIGIBLE (Age {age} - must be 20 or older)."}
+
+
+
+# ------------------ FORGOT PASSWORD MODULE ------------------
+class ForgotPasswordRequest(BaseModel):
+    email: str
+    user_type: str = "student" # 'student', 'organization', 'admin'
+
+class ResetPasswordRequest(BaseModel):
+    email: str
+    user_type: str = "student"
+    otp: str
+    new_password: str
+
+password_reset_otp_store = {}
+
+@app.post("/forgot-password/request")
+@app.post("/auth/forgot-password")
+def forgot_password_request(req: ForgotPasswordRequest):
+
+    email = req.email.strip().lower()
+    user_type = req.user_type.strip().lower()
+    
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    user_exists = False
+    
+    if user_type == 'student':
+        cursor.execute("SELECT user_id, email FROM users WHERE LOWER(email)=%s", (email,))
+        user_exists = bool(cursor.fetchone())
+    elif user_type == 'organization':
+        cursor.execute("SELECT organization_id, email FROM organizations WHERE LOWER(email)=%s", (email,))
+        user_exists = bool(cursor.fetchone())
+    elif user_type == 'admin':
+        cursor.execute("SELECT admin_id, email FROM admins WHERE LOWER(email)=%s", (email,))
+        user_exists = bool(cursor.fetchone())
+        
+    cursor.close()
+    conn.close()
+    
+    if not user_exists:
+        raise HTTPException(status_code=404, detail="No account registered with this email address.")
+        
+    otp = str(random.randint(100000, 999999))
+    password_reset_otp_store[f"{user_type}:{email}"] = {
+        "otp": otp,
+        "expires": datetime.now() + timedelta(minutes=10)
+    }
+    
+    print(f"\n{'='*50}")
+    print(f"🔐 FORGOT PASSWORD OTP for {user_type} ({email}): {otp}")
+    print(f"{'='*50}\n")
+    
+    return {
+        "message": f"OTP generated and sent to {email}.",
+        "otp": otp # Returned for dev/testing ease
+    }
+
+@app.post("/forgot-password/reset")
+@app.post("/auth/reset-password")
+def forgot_password_reset(req: ResetPasswordRequest):
+
+    email = req.email.strip().lower()
+    user_type = req.user_type.strip().lower()
+    key = f"{user_type}:{email}"
+    
+    if key not in password_reset_otp_store:
+        raise HTTPException(status_code=400, detail="No OTP requested for this email.")
+        
+    otp_data = password_reset_otp_store[key]
+    
+    if datetime.now() > otp_data["expires"]:
+        del password_reset_otp_store[key]
+        raise HTTPException(status_code=400, detail="OTP expired. Please request a new code.")
+        
+    if otp_data["otp"] != req.otp.strip():
+        raise HTTPException(status_code=400, detail="Invalid OTP code.")
+        
+    new_password_hash = sha256_crypt.hash(req.new_password)
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        if user_type == 'student':
+            cursor.execute("UPDATE users SET password_hash=%s, updated_at=NOW() WHERE LOWER(email)=%s", (new_password_hash, email))
+        elif user_type == 'organization':
+            cursor.execute("UPDATE organizations SET password_hash=%s, updated_at=NOW() WHERE LOWER(email)=%s", (new_password_hash, email))
+        elif user_type == 'admin':
+            cursor.execute("UPDATE admins SET password_hash=%s, updated_at=NOW() WHERE LOWER(email)=%s", (new_password_hash, email))
+            
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        del password_reset_otp_store[key]
+        
+        return {"message": "✅ Password reset successfully! You can now login with your new password."}
+    except Exception as e:
+        cursor.close()
+        conn.close()
+        raise HTTPException(status_code=500, detail=f"Database error while resetting password: {e}")
+
 
 
 

@@ -17,8 +17,10 @@ import CompanyDashboard from './components/company/CompanyDashboardNew';
 import AdminDashboard from './components/AdminDashboard';
 import StudentArea from './pages/StudentArea'; // 👈 1. IMPORT THE NEW CONTROLLER COMPONENT
 
-// TODO: Replace with your actual Google Client ID from Google Cloud Console
-const GOOGLE_CLIENT_ID = "109865123984-placeholder.apps.googleusercontent.com";
+// Real Google Client ID from Google Cloud Console
+const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || "906027018559-a82cg2rjj620i1klsi9cl02tdk44oq3a.apps.googleusercontent.com";
+
+
 
 function App() {
   return (

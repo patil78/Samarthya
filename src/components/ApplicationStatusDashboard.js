@@ -1,83 +1,83 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import EditProfileModal from './EditProfileModal';
 
 const ApplicationStatusDashboard = ({ studentData }) => {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const [offers, setOffers] = useState([]);
   const [preferences, setPreferences] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
+  const userId = user?.id || JSON.parse(localStorage.getItem('user'))?.id;
 
   // Fetch preferences
-  useEffect(() => {
-    const fetchPreferences = async () => {
-      try {
-        // Get user data from localStorage
-        const userData = JSON.parse(localStorage.getItem('user'));
-        
-        if (!userData || !userData.id) {
-          console.error('No user ID found in localStorage');
-          setLoading(false);
-          return;
-        }
-
-        const userId = userData.id;
-        const response = await fetch(`http://localhost:8000/student/${userId}/preferences`, {
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          console.log('Fetched preferences:', data);
-          setPreferences(data.preferences || []);
-        } else {
-          console.error('Failed to fetch preferences');
-        }
-      } catch (error) {
-        console.error('Error fetching preferences:', error);
+  const fetchPreferences = async () => {
+    try {
+      if (!userId) {
+        console.error('No user ID found');
+        setLoading(false);
+        return;
       }
-    };
 
-    fetchPreferences();
-  }, []);
+      const response = await fetch(`http://localhost:8000/student/${userId}/preferences`, {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Fetched preferences:', data);
+        setPreferences(data.preferences || []);
+      } else {
+        console.error('Failed to fetch preferences');
+      }
+    } catch (error) {
+      console.error('Error fetching preferences:', error);
+    }
+  };
 
   // Fetch matched offers from allocation
-  useEffect(() => {
-    const fetchMatchedOffers = async () => {
-      try {
-        const userData = JSON.parse(localStorage.getItem('user'));
-        
-        if (!userData || !userData.id) {
-          console.error('No user ID found in localStorage');
-          setLoading(false);
-          return;
-        }
-
-        const userId = userData.id;
-        const response = await fetch(`http://localhost:8000/student/${userId}/matched-offers`, {
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          console.log('Fetched matched offers:', data);
-          setOffers(data.offers || []);
-        } else {
-          console.error('Failed to fetch matched offers');
-        }
-      } catch (error) {
-        console.error('Error fetching matched offers:', error);
-      } finally {
+  const fetchMatchedOffers = async () => {
+    try {
+      if (!userId) {
+        console.error('No user ID found');
         setLoading(false);
+        return;
       }
-    };
 
+      const response = await fetch(`http://localhost:8000/student/${userId}/matched-offers`, {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Fetched matched offers:', data);
+        setOffers(data.offers || []);
+      } else {
+        console.error('Failed to fetch matched offers');
+      }
+    } catch (error) {
+      console.error('Error fetching matched offers:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPreferences();
     fetchMatchedOffers();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
+
+  const handleProfileUpdated = () => {
+    fetchPreferences();
+    fetchMatchedOffers();
+  };
 
   // --- Reusable Sub-Components ---
 
@@ -166,16 +166,34 @@ const ApplicationStatusDashboard = ({ studentData }) => {
 
   return (
     <div className="min-h-screen bg-gray-50 p-6 font-sans">
-      <header className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold text-gray-800">Application Dashboard</h1>
-        <button onClick={logout} className="bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-indigo-700">Logout</button>
+      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-800">Application Dashboard</h1>
+          <p className="text-sm text-gray-500 mt-1">Manage your student profile, view preferences, and check matched internship offers.</p>
+        </div>
+        <div className="flex items-center space-x-3">
+          <button 
+            onClick={() => setIsEditModalOpen(true)}
+            className="flex items-center space-x-2 bg-white text-indigo-600 border border-indigo-200 font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-indigo-50 hover:border-indigo-300 transition-all"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            <span>Edit Profile</span>
+          </button>
+          <button onClick={logout} className="bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm">
+            Logout
+          </button>
+        </div>
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left Column: Preferences */}
         <div className="lg:col-span-1">
           <div className="bg-white p-6 rounded-lg shadow-md">
-            <h2 className="text-xl font-bold text-gray-700 mb-4 border-b pb-2">Your Submitted Preferences</h2>
+            <div className="flex justify-between items-center mb-4 border-b pb-2">
+              <h2 className="text-xl font-bold text-gray-700">Your Submitted Preferences</h2>
+            </div>
             <div className="space-y-4">
               {preferences.length > 0 ? (
                 preferences.map((pref, index) => <PreferenceCard key={index} preference={pref} index={index} />)
@@ -206,8 +224,16 @@ const ApplicationStatusDashboard = ({ studentData }) => {
           </div>
         </div>
       </div>
+
+      {/* Edit Profile Overlay Modal */}
+      <EditProfileModal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        userId={userId}
+        onProfileUpdated={handleProfileUpdated}
+      />
     </div>
   );
 };
 
-export default ApplicationStatusDashboard;
+export default ApplicationStatusDashboard;

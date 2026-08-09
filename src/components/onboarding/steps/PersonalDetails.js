@@ -25,8 +25,8 @@ const PersonalDetails = ({ data, handleChange, handleFileChange, nextStep, prevS
     data.fatherMobile && 
     data.motherName && 
     data.motherMobile && 
-    data.annualIncome &&
-    data.incomeCertificate;
+    data.annualIncome;
+
 
     const handleNextClick = () => {
   if (!isFormComplete) {
@@ -175,28 +175,9 @@ const PersonalDetails = ({ data, handleChange, handleFileChange, nextStep, prevS
               className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" 
             />
           </div>
-
-          <div className="mt-4">
-            <label className="block text-sm font-medium text-gray-700">
-              Upload Income Certificate
-            </label>
-            <label className="mt-1 cursor-pointer flex items-center justify-center w-full px-3 py-2 border border-gray-400 border-dashed rounded-md bg-gray-50 hover:bg-gray-100">
-              <span className="text-indigo-600 font-medium">
-                {data.incomeCertificate 
-                  ? 'File selected: ' + data.incomeCertificate.name 
-                  : 'Click to select a file (PDF, JPG)'}
-              </span>
-              <input 
-                name="incomeCertificate" 
-                type="file" 
-                onChange={handleFileChange} 
-                className="sr-only" 
-              />
-            </label>
-          </div>
-
         </div>
       </div>
+
 
       {/* Buttons */}
       <div className="mt-8 flex justify-between">
